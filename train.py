@@ -26,14 +26,14 @@ logger = Logger(logger="dual_arm_multiprocess")
 #     for item in origin_obstacle_states:
 #         f.write("%s\n" % item)
 ###加载地图模型文件,16*16情形
-L1 = pd.read_excel("D:\origin_obstacle_states_mid.xlsx",engine="openpyxl",sheet_name="Sheet1")
+L1 = pd.read_excel("origin_obstacle_states_mid.xlsx",engine="openpyxl",sheet_name="Sheet1")
 origin_obstacle_states = []
 i=0
 for i in range(0, 16):
     j = 0
     for j in range(0, 16):
       x = i
-      y = L1.iat[j, i]
+      y = L1.iloc[j, i] if j < L1.shape[0] else 0
       if (y != 0):
         origin_obstacle_states.append([x,y])
 
