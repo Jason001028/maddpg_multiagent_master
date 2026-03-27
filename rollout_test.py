@@ -2,7 +2,8 @@
 import os
 import torch as th
 from core.model import actor
-from Env.env import Gridworld 
+from Env.env import Gridworld
+from Env.reward_wrapper import RewardWrapper
 from core.util import select_action
 from arguments import Args
 import sys
@@ -32,7 +33,7 @@ def rollout_test(args):
     actors_network = actor(env_params)
     actors_network.load_state_dict(act)
     actors_network.eval()
-    env = Gridworld(obstacles=origin_obstacle_states)
+    env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states))
     for i in range(args.demo_length):
         reward_tmp = []
         obs = env.reset() # reset the environment
@@ -40,9 +41,9 @@ def rollout_test(args):
         for t in range(env_params.max_timesteps):
             actions = select_action(actors_network, obs, explore = False)  # 输入的是numpy
             # put actions into the environment
-            observation_new, reward, done, info = env.step(actions)
-            # print(f'reward {reward} actions {actions} , dones: {done}')
-            env.render(reward, done, None)
+            observation_new, reward, done, info = env.step(t, actions)
+            escape_rate = info[0].get('escape_rate', 0)
+            env.render(escape_rate, reward, done, None)
             obs = observation_new
             reward_tmp.append(sum(reward))
 

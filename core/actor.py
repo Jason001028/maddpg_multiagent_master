@@ -6,6 +6,7 @@ sys.path.append(Path(__file__).parent.parent.resolve().as_posix())
 from core.util import select_action
 from core.model import actor
 from Env.env import Gridworld
+from Env.reward_wrapper import RewardWrapper
 from arguments import Args
 
 import torch
@@ -31,7 +32,7 @@ def actor_worker(
     try:
         logger.info(f"Actor {actor_index} started.")
         # init env
-        env = Gridworld(obstacles=origin_obstacle_states)
+        env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states))
         store_item = ['obs',  'next_obs', 'acts', 'r']
         policy = actor(env_params)
         init_flag = False
@@ -58,13 +59,13 @@ def actor_worker(
                 for t in range(max_timesteps):
                     ##探索工作量统计列表
                     actions = select_action(policy, obs, explore = True)  # 输入的是numpy
-                    escape_rate,count_agentself_total_add, next_obs, reward, done, info = env.step(t,actions)
-                    count_agentself_total = list(np.add(count_agentself_total, count_agentself_total_add))
-                    # print(count_agentself_total)
-                    save_fig = info[0]
+                    next_obs, reward, done, info = env.step(t, actions)
+                    escape_rate = info[0].get('escape_rate', 0)
+                    count_agentself_total = list(np.add(count_agentself_total, info[0]['step_cover_delta']))
+                    save_fig = info[0] if t == max_timesteps - 1 else None
                     save_fig_path = f'results_png/demo_{rolltime_count}_{rollouts_times}.png' if save_fig else None
                     #此处包含实时绘制参数
-                    env.render(escape_rate,reward, done, save_fig_path)
+                    env.render(escape_rate, reward, done, save_fig_path)
                     store_data = {
                         'obs' : obs, 
                         'next_obs': next_obs if t != max_timesteps - 1 else obs,

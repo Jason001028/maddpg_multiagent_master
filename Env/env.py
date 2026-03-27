@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import pygame
 import random
 import gymnasium as gym
-import math
 import copy
 import sys 
 from easydict import EasyDict as edict
@@ -33,7 +32,7 @@ env_params = edict({
 #     return file_name
 
 class Gridworld(gym.Env):
-    def __init__(self, agent_num = 3, obstacles = None):
+    def __init__(self, agent_num = 3, obstacles = None, agent_configs = None):
         # Initialize pygame
         pygame.init()
         self.agent_num = agent_num
@@ -67,9 +66,14 @@ class Gridworld(gym.Env):
         self.goal_state = []
 
         ##agent0,1,2: explorer,postman,surveyor
-        self.agent_task_rate = [0.3,0,0.7]
-
-        self.agent_task_viewrange = [1,0,4]
+        _default_configs = [
+            {'task_rate': 0.3, 'viewrange': 1},
+            {'task_rate': 0.0, 'viewrange': 0},
+            {'task_rate': 0.7, 'viewrange': 4},
+        ]
+        _configs = agent_configs if agent_configs is not None else _default_configs
+        self.agent_task_rate = [c['task_rate'] for c in _configs]
+        self.agent_task_viewrange = [c['viewrange'] for c in _configs]
 
         self.agent_cover_count = [0] * agent_num
         self.agent0_cover = []
@@ -274,150 +278,53 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
 
         return new_actions
 
-##在actor.py被调用   单回合智能体行动步骤
+##在actor.py被调用   单回合智能体行动步骤（纯物理推进，无奖励计算）
     def step(self, t, actions):
         actions = self.parse_action(actions)
         self.cur_step += 1
         for action in actions:
-            if action < 0 or action >= self.num_actions:#出现异常
+            if action < 0 or action >= self.num_actions:
                 raise Exception('Invalid action: {}'.format(action))
         assert len(actions) == self.agent_num, f'actions length is {len(actions)}, agent_num {self.agent_num}'
-        # 会根据智能体数目产生负奖励
-        rewards = [-0.005] * self.agent_num
-        count_oneclear_total = [0, 0, 0]
-        cita = [1, 1, 1]
+
+        count_oneclear_total = [0] * self.agent_num
         done = 0
+        # 记录每个智能体执行动作前的状态，供 Wrapper 计算奖励
+        prev_states = [s[:] for s in self.current_state]
+        valid_actions_list = []
+
         for i, action in enumerate(actions):
-            #更新奖励系数cita
-            #达到任务量，会限制探索，但给予大量奖励
-            if self.agent_cover_count[i] >= self.smog_initial_count * self.agent_task_rate[i]:
-                rewards[i] -= 1
-                cita[i] = 0.1
-            #清除迷雾，并计数
             count = self.clear_smog(i)
-            rewards[i] += cita[i]*count
-            # print(cita[i]*count)
             count_oneclear_total[i] += count
             self.total_clear += count
             valid_actions = self.get_availabel_action(i)
-            if(self.smog_realtime_count > count):
+            valid_actions_list.append(valid_actions)
+            if self.smog_realtime_count > count:
                 self.smog_realtime_count -= count
-            ##什么都不做，产生负奖励
-            if valid_actions[action] == 0:
-                if self.agent_cover_count[i] < self.agent_task_rate[i]*200:
-                    rewards[i] -= 15
-            else:
-                #次态位置坐标
-                next_state = [self.current_state[i][0] + self.action_mapping[action][0], self.current_state[i][1] + self.action_mapping[action][1]]
-                # shorted_dis = min(self.get_distance(next_state, self.goal_state[j]) for j in range(self.agent_num))
-                #机器人间的距离
-                shorted_dis = min(self.get_distance(next_state, self.current_state[j]) for j in range(self.agent_num))
-                #如果距离过近，会产生一个负奖励
-                avoid_rate = 10
-                if i == 0 or i == 2:
-                    if shorted_dis <= self.safe_dis:
-                        if shorted_dis == 5:
-                            rewards[i] -= 0.05*avoid_rate
-                        if shorted_dis == 4:
-                            rewards[i] -= 0.45*avoid_rate
-                        if shorted_dis == 3:
-                            rewards[i] -= 0.65*avoid_rate
-                        if shorted_dis == 2:
-                            rewards[i] -= 0.85*avoid_rate
-                        if shorted_dis <= 1:
-                            rewards[i] -= 1*avoid_rate
-                        else:
-                            rewards[i] += 0.15
-
-                if i == 1:
-                    d0 = self.get_distance(next_state, self.current_state[0])
-                    d2 = self.get_distance(next_state, self.current_state[2])
-                    target_dis = d0 if self.postman_target == 0 else d2
-                    rewards[i] += 3.0 / (target_dis + 1)
-                    if target_dis <= 2:
-                        rewards[i] += 5.0
-                        self.postman_target = 2 if self.postman_target == 0 else 0
-                        self.postman_relay_count += 1
-                    if d0 > 8 and d2 > 8:
-                        rewards[i] -= 2.0
-                # if shorted_dis < self.last_dis[i]:
-                #     rewards[i] -= 0.01
-                #     self.last_dis[i] = shorted_dis
-
-                # #与迷雾间的距离，鼓励自发探索行为
-                # if i == 0 or i == 2:
-                #     shorted_smog_dis = min(self.get_distance(self.current_state[i], self.goal_state[j])
-                #     for j in range(len(self.goal_state)))
-                #     if shorted_smog_dis <= self.expect_smog_dis[i]:
-                #         rewards[i] += 0.15
-                #         # print('有效启发探索')
-                #     else:
-                #         rewards[i] -= 0.15
-
-
+            if valid_actions[action] != 0:
+                next_state = [self.current_state[i][0] + self.action_mapping[action][0],
+                              self.current_state[i][1] + self.action_mapping[action][1]]
                 self.current_state[i] = next_state
                 self.trajectory[i].append(self.current_state[i])
-                if self.current_state[i] in self.goal_state:
-                    idx = self.goal_state.index(self.current_state[i])
-                    # print(idx)
-                    # if self.get_goal[idx] == 0:
-                    #     rewards[i] += 1
-                    #     self.get_goal[idx] = 1
-        # done, total_r = self.get_is_done()
-        # #全体获得集体奖励与集体惩罚，当探索量到达规定量后，合计奖励才为正值
-        # total_r = (sum(count_oneclear_total)-count_oneclear_total[1]) * 0.15 + count_oneclear_total[2]*0.3 + (30 - self.smog_realtime_count) * 0.02
 
-        #全体获得集体奖励与集体惩罚，当探索量到达规定量后，合计奖励才为正值
-        total_r = (sum(count_oneclear_total) - count_oneclear_total[1]) * 0.65 - self.smog_realtime_count * 0.1 + (
-                    self.smog_initial_count - self.smog_realtime_count) * 0.3
-        escape_rate = (self.agent_cover_count[0]/self.agent_cover_count[2])/(self.agent_task_rate[0]/self.agent_task_rate[2])
-        if 0.25 < escape_rate < 4:
-            total_r += 10*math.atan(1/(escape_rate-1))
-            if 0.5 < escape_rate < 2:
-                total_r += 10*math.atan(1/(escape_rate-1))
-            if escape_rate == 1:
-                total_r += 20
+        sub_agent_obs = [self.get_state(i) for i in range(self.agent_num)]
+        # escape_rate: 任务均衡性指标，agent2覆盖量为0时置0
+        if self.agent_cover_count[2] > 0:
+            escape_rate = (self.agent_cover_count[0] / self.agent_cover_count[2]) / (self.agent_task_rate[0] / self.agent_task_rate[2])
         else:
-            if escape_rate != 0:
-                if escape_rate > 1:
-                    total_r -= 5*math.atan(escape_rate-1)
-                if escape_rate < 1:
-                    total_r -= 5*math.atan(1/escape_rate)
-            if escape_rate == 0:
-                total_r -= 6
+            escape_rate = 0.0
 
+        infos = [{
+            'escape_rate': escape_rate,
+            'agent_cover_count': self.agent_cover_count.copy(),   # 累积覆盖量
+            'step_cover_delta': count_oneclear_total.copy(),       # 单步增量
+            'valid_actions': valid_actions_list,
+            'prev_states': prev_states,
+        } for _ in range(self.agent_num)]
 
-        if count_oneclear_total.count(0) == len(count_oneclear_total) and self.smog_realtime_count > 20:
-            total_r -= 5
-
-        rewards = [r+total_r for r in rewards]
-        info = [] if total_r != 1 else [True]
-        sub_agent_obs = []
-        sub_agent_reward = []
-        sub_agent_done = []
-        sub_agent_info = []
-
-        # #返回cover值,用于最后制图
-        # bg = op.load_workbook(r"saved_models/agent_cover.xlsx")
-        # sheet = bg["Sheet1"]  # “Sheet1”表示将数据写入到excel文件的sheet1下
-        # row_num = 1
-        # bgplus = bg.active
-        # for i in range(1,t+1):
-        #     if bgplus.cell(row=i,column=1).value != None:
-        #          row_num += 1
-        # for i in range(1, len(self.agent_cover_count)+1):
-        #     sheet.cell(row_num, i, self.agent_cover_count[i-1])  # sheet.cell(1,1,num_list[0])表示将num_list列表的第0个数据1写入到excel表格的第一行第一列
-        # bg.save("saved_models/agent_cover.xlsx")  # 对文件进行保存
-        # bg.close()
-
-        for i in range(self.agent_num):
-            sub_agent_obs.append(self.get_state(i))
-            sub_agent_reward.append(rewards[i])
-            sub_agent_done.append(done)
-            sub_agent_info.append(info)
-#这里返回值容易error
-        # print(count_oneclear_total)
-        return escape_rate,self.agent_cover_count, sub_agent_obs, sub_agent_reward, sub_agent_done, sub_agent_info
+        dones = [done] * self.agent_num
+        rewards = [0.0] * self.agent_num  # 奖励由 RewardWrapper 计算
+        return sub_agent_obs, rewards, dones, infos
 
 
     def get_is_done(self):
