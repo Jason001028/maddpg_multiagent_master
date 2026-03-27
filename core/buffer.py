@@ -16,7 +16,10 @@ def sample_func( buffer, batch_size):
     # gather training data
     transitions = {}
     for key in buffer.keys():
-        transitions[key] = torch.stack([buffer[key][idx][t_samples[t_idx]] for t_idx,idx in enumerate(episode_idxs)])
+        #transitions[key] = torch.stack([buffer[key][idx][t_samples[t_idx]] for t_idx,idx in enumerate(episode_idxs)])
+        # 修改后（新增.to('cpu')，先在CPU上堆叠张量，后续再转到GPU）
+        transitions[key] = torch.stack([buffer[key][idx][t_samples[t_idx]].to('cpu') for t_idx,idx in enumerate(episode_idxs)])
+    
     transitions = {k: transitions[k].reshape(batch_size, *transitions[k].shape[1:]) for k in transitions.keys()}
     return transitions
 
@@ -71,7 +74,7 @@ class replay_buffer:
             temp_buffers[key] = self.buffers[key][:self.current_size]
         data_tmp = self.sample_fun(temp_buffers, batch_size)
         # reward is recomputed
-        data_tmp['reward'] = torch.tensor(data_tmp['reward'], dtype= self.specs['reward']['dtype'])
+        data_tmp['reward'] = data_tmp['reward'].detach().clone().to(self.specs['reward']['dtype'])
         transitions = {}
         for key, val in data_tmp.items():
             transitions[key] = val.clone().to(self.device)
@@ -164,7 +167,7 @@ if __name__ == '__main__':
                 # start to collect samples
                 for t in range(max_timesteps):
                     actions = select_action(actors, obs, explore = True)  # 输入的是numpy
-                    next_obs, reward, done, _ = env.step(actions)
+                    _, _, next_obs, reward, done, _ = env.step(t, actions)
                     env.render(reward, done)
                     store_data = {
                         'obs' : obs, 

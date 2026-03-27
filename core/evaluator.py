@@ -56,10 +56,10 @@ def evaluate_worker(
                 for t in range(max_timesteps):
                     actions = select_action(actors, obs, explore = False)  # 输入的是numpy
                     # put actions into the environment
-                    agent_cover,observation_new, reward, dones, info = env.step(actions)
+                    escape_rate, agent_cover, observation_new, reward, dones, info = env.step(t, actions)
                     # print(f'reward {reward} actions {actions} , dones: {done}')
                     save_fig_path = f'results_eval_png/demo_{total_evalue_time}_{i}.png' if t == max_timesteps - 1 else None
-                    env.render(reward, dones, save_fig_path)
+                    env.render(escape_rate, reward, dones, save_fig_path)
                     obs = observation_new
                     reward_tmp.append(sum(reward))
                     if dones[0]:

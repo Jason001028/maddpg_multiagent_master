@@ -13,12 +13,18 @@ class Logger(object):
         log_path = os.getcwd() + "/logs/"
         log_name = log_path + rq + ".log"
         if not self.logger.handlers:
-            ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(logging.DEBUG)
             formatter = logging.Formatter(
                 "%(asctime)s - %(filename)s[line:%(lineno)d] - %(name)s - %(message)s")
+            # 新增loss
+            ch = logging.StreamHandler(sys.stdout)
+            ch.setLevel(logging.DEBUG)
             ch.setFormatter(formatter)
             self.logger.addHandler(ch)
+            os.makedirs(log_path, exist_ok=True)
+            fh = logging.FileHandler(log_name, encoding='utf-8')
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(formatter)
+            self.logger.addHandler(fh)
 
     def _get_past_time(self):
         s_time = int(time.time() - self.start_time)

@@ -3,6 +3,26 @@ Here are the params for training
 """
 from easydict import EasyDict as edict
 import time
+import os
+import multiprocessing
+# 强制 PyTorch 编译 sm_89 内核（适配 RTX 5070 Blackwell）
+os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9;8.0;7.5"
+# 锁定使用你的 RTX 5070
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+import torch
+
+
+# 1. 强制PyTorch为RTX5070（算力8.9）生成适配的CUDA内核
+os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9;8.0;7.5"  # 8.9=RTX5070，向下兼容30/20系
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 锁定第0块显卡（你的RTX5070）
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # 避免异步CUDA错误，方便调试
+
+# 2. 修复Windows多进程+CUDA的启动问题
+if torch.cuda.is_available():
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass
 
 class Args:
     time_date = time.localtime()
@@ -28,6 +48,10 @@ class Args:
         })
     #max_timesteps:200→400
 
+    # ========== 关键修改：替换硬编码的'device':'cuda' ==========
+    # 自动检测CUDA，生成torch.device对象（更稳定）
+    DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
     train_params = edict({
         # params for multipross
         #1e7 → 2e5
@@ -49,7 +73,7 @@ class Args:
         'gamma' : 0.98,
         'batch_size' :  256,
         'buffer_size' : 1e6, 
-        'device' : 'cuda',
+        'device' : DEVICE,
         'lr_actor' : 0.001,
         'lr_critic' : 0.001,
         'lr_disc' : 0.001,
@@ -67,3 +91,10 @@ class Args:
     train_params.update(env_params)
 
 
+# ========== 可选：打印设备信息，确认适配成功（不用删） ==========
+if __name__ == "__main__":
+    print(f"CUDA可用: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"显卡名称: {torch.cuda.get_device_name(0)}")
+        print(f"显卡算力: {torch.cuda.get_device_capability(0)}")  # 应输出(8,9)
+    print(f"训练设备: {Args().DEVICE}")
