@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pygame
 import random
-import gym
+import gymnasium as gym
 import math
 import copy
 import sys 
@@ -22,6 +22,7 @@ env_params = edict({
     })
 #easydict模块，简化字典调用
 
+#agent 0：探索者 1：支援者 2：侦察者
 
 # def initialize_cover_csv(path):
 #     file_name = os.path.join(path, 'training_cover_data.csv')
@@ -78,6 +79,8 @@ class Gridworld(gym.Env):
         self.agent0_move_count = 0
         self.agent1_move_count = 0
         self.agent2_move_count = 0
+        self.postman_target = 2  # postman 当前要去的目标 agent（0 或 2）
+        self.postman_relay_count = 0
 
         # init obstacle pos
         # for _ in range(60):
@@ -110,7 +113,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         ]
         self.reset()
 
-##地图迷雾函数
+    ##地图迷雾函数
     def smog(self):
         self.goal_state = []
         self.smog_count = 0
@@ -150,6 +153,8 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         self.smog_realtime_count = self.smog()
         self.smog_initial_count = self.smog_realtime_count
         self.agent_cover_count = [0] * self.agent_num
+        self.postman_target = 2
+        self.postman_relay_count = 0
 
         self.cur_step = 0
         #0代表未达到，1代表达到 先暂时全注释掉
@@ -309,7 +314,6 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
                 shorted_dis = min(self.get_distance(next_state, self.current_state[j]) for j in range(self.agent_num))
                 #如果距离过近，会产生一个负奖励
                 avoid_rate = 10
-                tele_rate = 5
                 if i == 0 or i == 2:
                     if shorted_dis <= self.safe_dis:
                         if shorted_dis == 5:
@@ -326,18 +330,16 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
                             rewards[i] += 0.15
 
                 if i == 1:
-                    if shorted_dis == 5:
-                        rewards[i] += 0.05 * tele_rate
-                    if shorted_dis == 4:
-                        rewards[i] += 0.45 * tele_rate
-                    if shorted_dis == 3:
-                        rewards[i] += 0.65 * tele_rate
-                    if shorted_dis == 2:
-                        rewards[i] += 0.85 * tele_rate
-                    if shorted_dis <= 1:
-                        rewards[i] += 1 * tele_rate
-                    else:
-                        rewards[i] -= 0.25
+                    d0 = self.get_distance(next_state, self.current_state[0])
+                    d2 = self.get_distance(next_state, self.current_state[2])
+                    target_dis = d0 if self.postman_target == 0 else d2
+                    rewards[i] += 3.0 / (target_dis + 1)
+                    if target_dis <= 2:
+                        rewards[i] += 5.0
+                        self.postman_target = 2 if self.postman_target == 0 else 0
+                        self.postman_relay_count += 1
+                    if d0 > 8 and d2 > 8:
+                        rewards[i] -= 2.0
                 # if shorted_dis < self.last_dis[i]:
                 #     rewards[i] -= 0.01
                 #     self.last_dis[i] = shorted_dis
