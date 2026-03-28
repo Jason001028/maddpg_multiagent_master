@@ -1,40 +1,9 @@
-# RL-MADDPG-navigation-gird-world
-An implementation of MADDPG on grid world navigation
-use multiprocess, and there is worker for sampling, learner for learning policy, and evaluator for evaluate policy at a fixed interval.
+# MADDPG-based-Distributed-Cooperative-Search-Strategy-for-Heterogeneous-Agents-System
+本仓库是作者本人对ei会议
+《MADDPG-based Distributed Cooperative Search Strategy for Heterogeneous Agents System》代码记录
 
-```
-├── Env          # 
-|   ├── env.py     # base env gird world
-├── Core          training core# 
-|   ├── HER.py     # Hindsight experience replay, actually not use
-|   ├── actor.py     # actor node for sampling data
-|   ├── evaluator.py     # evaluate policy node
-|   ├── learner.py     # learning process node
-|   ├── logger.py     # record necessary info
-|   ├── model.py     # define NN model
-|   ├── normalizer.py     # normalize sampling data
-|   ├── util.py     # some utils
-├── arguments                       #train arguments
-├── collection_experiments.py       # simple visualize, may use for collecting samples, but not use till now.
-├── origin_obstacle_states.txt      # make obstacle same at all evironment, for simplifing problem
-├── plot.py                         #plot
-├── rollout_test.py                 # rollout saved policy
-├── train.py                         #training entrance
-```
+![image](https://github.com/user-attachments/assets/4984ddd1-4a54-413d-a904-2218498f1795)
 
-```python
-python train.py # modify args in arguments.py
-```
-<div style="display: flex; justify-content: center;">
-<img src="picture\DMADDPG.png" alt="structure" width="60%" />
-</div>
-The results:
-<div style="display: flex; justify-content: center;">
-<img src="picture\plot.png" alt="plot data" width="50%" />
-</div>
-<div style="display: flex; justify-content: center;">
-<img src="picture\result_1.jpg" alt="results after average moving" width="50%" />
-</div>
-<div style="display: flex; justify-content: center;">
-<img src="picture\result_2.gif" alt="visualize" width="60%" />
-</div>
+![image](https://github.com/user-attachments/assets/696a0e0c-bc00-411b-a732-db0d8183b401)
+
+![image](https://github.com/user-attachments/assets/5b0113a5-1bb8-4432-8a3d-59144378936a)
