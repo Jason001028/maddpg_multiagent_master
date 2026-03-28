@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pygame
 import random
 import gym
+import os
 import copy
 import sys 
 from easydict import EasyDict as edict
@@ -66,14 +67,12 @@ class Gridworld(gym.Env):
         self.goal_state = []
 
         ##agent0,1,2: explorer,postman,surveyor
-        _default_configs = [
-            {'task_rate': 0.3, 'viewrange': 1},
-            {'task_rate': 0.0, 'viewrange': 0},
-            {'task_rate': 0.7, 'viewrange': 4},
-        ]
-        _configs = agent_configs if agent_configs is not None else _default_configs
-        self.agent_task_rate = [c['task_rate'] for c in _configs]
-        self.agent_task_viewrange = [c['viewrange'] for c in _configs]
+        # 角色特征向量 E_i 由外部注入（arguments.role_configs），禁止在此硬编码
+        if agent_configs is None:
+            raise ValueError("agent_configs (role_configs) must be injected externally; do not hardcode role attributes in env.")
+        self.role_features = agent_configs  # list of dicts, E_i
+        self.agent_task_rate = [c['task_rate'] for c in agent_configs]
+        self.agent_task_viewrange = [c['viewrange'] for c in agent_configs]
 
         self.agent_cover_count = [0] * agent_num
         self.agent0_cover = []
@@ -320,6 +319,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
             'step_cover_delta': count_oneclear_total.copy(),       # 单步增量
             'valid_actions': valid_actions_list,
             'prev_states': prev_states,
+            'role_features': self.role_features,                   # E_i，供 Actor 角色编码器 f_role 使用
         } for _ in range(self.agent_num)]
 
         dones = [done] * self.agent_num
@@ -418,6 +418,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         # Update display
         pygame.display.update()
         if save_path_name is not None:
+            os.makedirs(os.path.dirname(save_path_name), exist_ok=True)
             pygame.image.save(self.window, save_path_name)
 
         # Check for quit event

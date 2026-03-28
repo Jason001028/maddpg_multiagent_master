@@ -92,6 +92,14 @@ class Args:
 
     algo_name = 'legacy_maddpg'
 
+    # 异构体角色特征向量 E_i：task_rate 决定任务量上限，viewrange 决定迷雾清除半径
+    # 顺序对应 agent 0（explorer）、1（postman）、2（surveyor）
+    role_configs = [
+        {'task_rate': 0.3, 'viewrange': 1},   # explorer
+        {'task_rate': 0.0, 'viewrange': 0},   # postman
+        {'task_rate': 0.7, 'viewrange': 4},   # surveyor
+    ]
+
 
 # ========== 可选：打印设备信息，确认适配成功（不用删） ==========
 if __name__ == "__main__":

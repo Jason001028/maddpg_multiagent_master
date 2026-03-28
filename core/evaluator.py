@@ -37,7 +37,7 @@ def evaluate_worker(
         origin_obstacle_states
     ):
     csv_file_name = initialize_csv(plot_path)  #初始化csv文件，仅有title
-    env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states))
+    env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states, agent_configs=Args.role_configs))
     actors = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
     total_evalue_time = 0 
     while True:
@@ -57,7 +57,11 @@ def evaluate_worker(
                 for t in range(max_timesteps):
                     actions = actors.act(obs, explore=False)
                     # put actions into the environment
-                    observation_new, reward, dones, info = env.step(t, actions)
+                    step_result = env.step(t, actions)
+                    if len(step_result) == 6:
+                        _, _, reward, observation_new, dones, info = step_result
+                    else:
+                        observation_new, reward, dones, info = step_result
                     escape_rate = info[0].get('escape_rate', 0)
                     # print(f'reward {reward} actions {actions} , dones: {done}')
                     save_fig_path = f'results_eval_png/demo_{total_evalue_time}_{i}.png' if t == max_timesteps - 1 else None

@@ -31,7 +31,7 @@ def actor_worker(
     try:
         logger.info(f"Actor {actor_index} started.")
         # init env
-        env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states))
+        env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states, agent_configs=Args.role_configs))
         store_item = ['obs',  'next_obs', 'acts', 'r']
         policy = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
         init_flag = False
@@ -58,7 +58,7 @@ def actor_worker(
                 for t in range(max_timesteps):
                     ##探索工作量统计列表
                     actions = policy.act(obs, explore=True)
-                    next_obs, reward, done, info = env.step(t, actions)
+                    _, _, reward, next_obs, done, info = env.step(t,actions)
                     escape_rate = info[0].get('escape_rate', 0)
                     count_agentself_total = list(np.add(count_agentself_total, info[0]['step_cover_delta']))
                     save_fig = info[0] if t == max_timesteps - 1 else None
