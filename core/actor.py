@@ -32,7 +32,7 @@ def actor_worker(
         logger.info(f"Actor {actor_index} started.")
         # init env
         env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states, agent_configs=Args.role_configs))
-        store_item = ['obs',  'next_obs', 'acts', 'r']
+        store_item = ['obs', 'next_obs', 'acts', 'reward', 'dones', 'role_features']
         policy = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
         init_flag = False
         rolltime_count = 0
@@ -47,10 +47,10 @@ def actor_worker(
             elif not init_flag:
                 time.sleep(5)
                 continue
-            mb_store_dict = {item : [] for item in store_item}
+            mb_store_dict = {item: [] for item in store_item}
             rolltime_count += 1
             for rollouts_times in range(store_interval):
-                ep_store_dict = {item : [] for item in store_item}
+                ep_store_dict = {item: [] for item in store_item}
                 #在这里实际重置环境
                 obs = env.reset() # reset the environment
                 # start to collect samples
@@ -58,18 +58,23 @@ def actor_worker(
                 for t in range(max_timesteps):
                     ##探索工作量统计列表
                     actions = policy.act(obs, explore=True)
-                    _, _, reward, next_obs, done, info = env.step(t,actions)
+                    _, _, reward, next_obs, done, info = env.step(t, actions)
                     escape_rate = info[0].get('escape_rate', 0)
                     count_agentself_total = list(np.add(count_agentself_total, info[0]['step_cover_delta']))
                     save_fig = info[0] if t == max_timesteps - 1 else None
                     save_fig_path = f'results_png/demo_{rolltime_count}_{rollouts_times}.png' if save_fig else None
                     #此处包含实时绘制参数
                     env.render(escape_rate, reward, done, save_fig_path)
+                    # role_features: list of dicts → (n_agents, 2) float array
+                    rf = info[0].get('role_features', [{'task_rate': 0.0, 'viewrange': 0.0}] * n_agents)
+                    rf_arr = np.array([[d['task_rate'], d['viewrange']] for d in rf], dtype=np.float32)
                     store_data = {
-                        'obs' : obs, 
+                        'obs': obs,
                         'next_obs': next_obs if t != max_timesteps - 1 else obs,
-                        'acts' : actions,
-                        'r': reward
+                        'acts': actions,
+                        'reward': reward,
+                        'dones': np.array(done, dtype=np.float32).reshape(n_agents, 1),
+                        'role_features': rf_arr,
                     }
                     # append rollouts
                     for key, val in store_data.items():
@@ -77,10 +82,9 @@ def actor_worker(
                     obs = next_obs
                 for key in store_item:
                     mb_store_dict[key].append(deepcopy(ep_store_dict[key]))
-            # convert them into arrays
-                store_data = [np.array(val) for key, val in mb_store_dict.items()]
-                # send data to data_queue
-                data_queue.put(store_data, block = True)
+            # convert them into arrays and send as dict
+                episode_dict = {key: np.array(mb_store_dict[key]) for key in store_item}
+                data_queue.put(episode_dict, block=True)
             # real_size = self.buffer.check_real_cur_size()
             logger.info(f'actor {actor_index} send data, current data_queue size is {store_interval * data_queue.qsize()}')
     except KeyboardInterrupt:

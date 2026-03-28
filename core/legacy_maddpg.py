@@ -47,7 +47,7 @@ class LegacyMADDPG(BaseMARLAlgorithm):
     def _to_numpy(x):
         return x.cpu().numpy() if isinstance(x, torch.Tensor) else x
 
-    def update(self, transitions, logger, step=0):
+    def update(self, transitions, logger, step=0, **kwargs):
         def to_tensor(key):
             arr = [self._to_numpy(v) for v in transitions[key]]
             return torch.tensor(np.array(arr), dtype=torch.float32).to(self.device)
@@ -58,6 +58,9 @@ class LegacyMADDPG(BaseMARLAlgorithm):
         obs_next = to_tensor('next_obs')
         acts     = to_tensor('acts')
         r        = to_tensor(r_key)
+        # dones: (batch, n_agents, 1)，用于屏蔽终止状态的下一步 Q 值
+        dones = to_tensor('dones') if 'dones' in transitions else torch.zeros_like(r)
+        # role_features 由第四阶段算法消费，当前静默丢弃
         batch = obs.shape[0]
         n = self.n_agents
 
@@ -66,11 +69,12 @@ class LegacyMADDPG(BaseMARLAlgorithm):
             obs_next = obs_next.reshape(batch, n, -1)
             acts_i   = acts.reshape(batch, n, -1)
             r_i      = r.reshape(batch, n, -1)
+            dones_i  = dones.reshape(batch, n, -1)
 
             acts_next = self.model.actors_target(obs_next).reshape(batch, -1).unsqueeze(1).repeat(1, n, 1)
             q_next    = self.model.critics_target(
                 obs_next.reshape(batch, -1).unsqueeze(1).repeat(1, n, 1), acts_next)
-            target_q  = r_i + self.gamma * q_next
+            target_q  = r_i + self.gamma * q_next * (1 - dones_i)
 
         real_q = self.model.critic(
             obs.reshape(batch, -1).unsqueeze(1).repeat(1, n, 1),
