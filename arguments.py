@@ -90,6 +90,8 @@ class Args:
 
     train_params.update(env_params)
 
+    algo_name = 'legacy_maddpg'
+
 
 # ========== 可选：打印设备信息，确认适配成功（不用删） ==========
 if __name__ == "__main__":

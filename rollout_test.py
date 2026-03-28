@@ -1,10 +1,9 @@
 #! /usr/bin/env python
 import os
 import torch as th
-from core.model import actor
+from core.registry import get_algorithm
 from Env.env import Gridworld
 from Env.reward_wrapper import RewardWrapper
-from core.util import select_action
 from arguments import Args
 import sys
 
@@ -27,19 +26,17 @@ origin_obstacle_states = [[1, 11],[1 ,18],
 
 def rollout_test(args):
     act, cr, = th.load(model_path, map_location=lambda storage, loc: storage)
-    # create the environment+
     env_params = args.env_params
-    # get agents
-    actors_network = actor(env_params)
-    actors_network.load_state_dict(act)
-    actors_network.eval()
+    actors_network = get_algorithm(args.algo_name, args, env_params, device='cpu')
+    actors_network.sync_actor({'actor_dict': act})
+    actors_network.model.actor.eval()
     env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states))
     for i in range(args.demo_length):
         reward_tmp = []
         obs = env.reset() # reset the environment
         # start to do the demo
         for t in range(env_params.max_timesteps):
-            actions = select_action(actors_network, obs, explore = False)  # 输入的是numpy
+            actions = actors_network.act(obs, explore=False)
             # put actions into the environment
             observation_new, reward, done, info = env.step(t, actions)
             escape_rate = info[0].get('escape_rate', 0)

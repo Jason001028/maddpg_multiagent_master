@@ -1,5 +1,6 @@
 import math
-import gymnasium as gym
+import gym
+import numpy as np
 
 
 class RewardWrapper(gym.Wrapper):
@@ -36,9 +37,10 @@ class RewardWrapper(gym.Wrapper):
             # 迷雾清除奖励
             rewards[i] += cita[i] * count_oneclear_total[i]
 
-            valid_actions = valid_actions_list[i]
+            valid_actions  = valid_actions_list[i]
+            discrete_action = int(np.argmax(action))
             # 无效动作惩罚
-            if valid_actions[action] == 0:
+            if valid_actions[discrete_action] == 0:
                 if env.agent_cover_count[i] < env.agent_task_rate[i] * 200:
                     rewards[i] -= 15
             else:

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pygame
 import random
-import gymnasium as gym
+import gym
 import copy
 import sys 
 from easydict import EasyDict as edict

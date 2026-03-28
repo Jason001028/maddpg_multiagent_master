@@ -3,8 +3,7 @@ import sys
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.resolve().as_posix())
 
-from core.util import select_action
-from core.model import actor
+from core.registry import get_algorithm
 from Env.env import Gridworld
 from Env.reward_wrapper import RewardWrapper
 from arguments import Args
@@ -34,7 +33,7 @@ def actor_worker(
         # init env
         env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states))
         store_item = ['obs',  'next_obs', 'acts', 'r']
-        policy = actor(env_params)
+        policy = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
         init_flag = False
         rolltime_count = 0
         # sampling ..
@@ -42,7 +41,7 @@ def actor_worker(
             # update model params periodly
             if not actor_queue.empty():
                 data = actor_queue.get()
-                policy.load_state_dict(data['actor_dict'])
+                policy.sync_actor(data)
                 init_flag = True
             # first time initialization
             elif not init_flag:
@@ -58,7 +57,7 @@ def actor_worker(
                 count_agentself_total = [0, 0, 0]
                 for t in range(max_timesteps):
                     ##探索工作量统计列表
-                    actions = select_action(policy, obs, explore = True)  # 输入的是numpy
+                    actions = policy.act(obs, explore=True)
                     next_obs, reward, done, info = env.step(t, actions)
                     escape_rate = info[0].get('escape_rate', 0)
                     count_agentself_total = list(np.add(count_agentself_total, info[0]['step_cover_delta']))

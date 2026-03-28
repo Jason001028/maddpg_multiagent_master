@@ -8,10 +8,10 @@ import os
 import csv
 from matplotlib import pyplot as plt
 import pygame
-from core.util import select_action
-from core.model import actor
+from core.registry import get_algorithm
 from Env.env import Gridworld
 from Env.reward_wrapper import RewardWrapper
+from arguments import Args
 
 def initialize_csv(path):
     file_name = os.path.join(path, 'training_data.csv')
@@ -38,15 +38,15 @@ def evaluate_worker(
     ):
     csv_file_name = initialize_csv(plot_path)  #初始化csv文件，仅有title
     env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states))
-    actors = actor(env_params)
+    actors = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
     total_evalue_time = 0 
     while True:
         if not evalue_queue.empty():
             total_evalue_time += 1
             data = evalue_queue.get()
             evaluate_step = data['step']
-            actors.load_state_dict(data['actor_dict'])
-            actors.eval()
+            actors.sync_actor(data)
+            actors.model.actor.eval()
             total_rewards = []
             max_timesteps = env_params.max_timesteps
             for i in range(evalue_time):
@@ -55,7 +55,7 @@ def evaluate_worker(
 
                 # start to do the demo
                 for t in range(max_timesteps):
-                    actions = select_action(actors, obs, explore = False)  # 输入的是numpy
+                    actions = actors.act(obs, explore=False)
                     # put actions into the environment
                     observation_new, reward, dones, info = env.step(t, actions)
                     escape_rate = info[0].get('escape_rate', 0)
