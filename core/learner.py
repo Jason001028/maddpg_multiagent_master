@@ -1,6 +1,6 @@
 import time
 from arguments import Args
-from core.buffer import replay_buffer
+from core.buffer import ReplayBuffer as replay_buffer
 from core.registry import get_algorithm
 
 env_params = Args.env_params
