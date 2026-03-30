@@ -289,7 +289,6 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         assert len(actions) == self.agent_num, f'actions length is {len(actions)}, agent_num {self.agent_num}'
 
         count_oneclear_total = [0] * self.agent_num
-        done = 0
         # 记录每个智能体执行动作前的状态，供 Wrapper 计算奖励
         prev_states = [s[:] for s in self.current_state]
         valid_actions_list = []
@@ -315,6 +314,30 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         else:
             escape_rate = 0.0
 
+        is_terminal, is_success_flag = self.get_is_done()
+        done = 1 if is_terminal else 0
+
+        # 碰撞检测：当前步执行后，任意两智能体占据相同格子
+        collisions = 0
+        for ii in range(self.agent_num):
+            for jj in range(ii + 1, self.agent_num):
+                if self.current_state[ii] == self.current_state[jj]:
+                    collisions += 1
+
+        # 能耗估算：所有智能体动作向量的 L2 范数之和（actions 已被 parse_action 转为离散索引，用原始连续向量不可得；
+        # 此处用离散动作的 L2：非静止动作 norm=1，静止=0）
+        # 注：parse_action 已消费原始 actions，这里用 count_oneclear_total 无关；
+        # 直接对 actions（已是离散索引列表）计算：移动动作(1-4)贡献1，静止(0)贡献0
+        # 但 actions 在此作用域已是离散索引（parse_action 返回值），需重新获取
+        # 实际上 parse_action 在 step 开头已将 actions 覆盖为离散索引
+        energy_cost = float(sum(1.0 for a in actions if a != 0))
+
+        # 位移总和：当前位置与执行前位置的曼哈顿距离之和
+        distance_delta = float(sum(
+            abs(self.current_state[i][0] - prev_states[i][0]) + abs(self.current_state[i][1] - prev_states[i][1])
+            for i in range(self.agent_num)
+        ))
+
         infos = [{
             'escape_rate': escape_rate,
             'agent_cover_count': self.agent_cover_count.copy(),   # 累积覆盖量
@@ -322,6 +345,10 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
             'valid_actions': valid_actions_list,
             'prev_states': prev_states,
             'role_features': self.role_features,                   # E_i，供 Actor 角色编码器 f_role 使用
+            'is_success': bool(is_success_flag),                   # 成功完成（非超时截断）
+            'collisions': collisions,                              # 本步碰撞次数
+            'energy_cost': energy_cost,                            # 本步能耗估算
+            'distance_delta': distance_delta,                      # 本步位移总和
         } for _ in range(self.agent_num)]
 
         dones = [done] * self.agent_num

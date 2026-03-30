@@ -1,6 +1,8 @@
 import logging
+import os
 import os.path
 import time
+import csv
 import colorama
 from colorama import Fore, Style
 import sys
@@ -53,6 +55,44 @@ class Logger(object):
 
     def critical(self, msg):
         self.logger.critical(Fore.RED + "CRITICAL - " + str(msg +'      past time : '+self._get_past_time()) + Style.RESET_ALL)
+
+
+# 评估指标字段顺序（同时作为 CSV 表头）
+_EVAL_FIELDS = ['step', 'actor_loss', 'critic_loss',
+                'success_rate', 'mean_reward', 'mean_time',
+                'mean_energy', 'mean_collision', 'mean_distance', 'fitness']
+
+
+def log_eval_metrics(plot_path: str, metrics: dict):
+    """
+    将评估指标写入 TensorBoard 和 CSV。
+    - TensorBoard: {plot_path}/tb/
+    - CSV:         {plot_path}/eval_metrics.csv  (首次写入自动生成表头)
+    """
+    # --- TensorBoard ---
+    try:
+        import importlib
+        SummaryWriter = importlib.import_module('torch.utils.tensorboard').SummaryWriter
+        tb_dir = os.path.join(plot_path, 'tb')
+        writer = SummaryWriter(log_dir=tb_dir)
+        step = metrics.get('step', 0)
+        for key in _EVAL_FIELDS:
+            if key in metrics and key != 'step':
+                writer.add_scalar(f'eval/{key}', metrics[key], global_step=step)
+        writer.close()
+    except Exception:
+        pass  # TensorBoard 不可用时静默跳过
+
+    # --- CSV ---
+    os.makedirs(plot_path, exist_ok=True)
+    csv_path = os.path.join(plot_path, 'eval_metrics.csv')
+    write_header = not os.path.exists(csv_path)
+    with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=_EVAL_FIELDS, extrasaction='ignore')
+        if write_header:
+            writer.writeheader()
+        writer.writerow(metrics)
+
 
 if __name__ == '__main__':
     log = Logger(logger="test")
