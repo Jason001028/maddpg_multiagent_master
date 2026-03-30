@@ -64,7 +64,7 @@ def actor_worker(
                     escape_rate = info[0].get('escape_rate', 0)
                     count_agentself_total = list(np.add(count_agentself_total, info[0]['step_cover_delta']))
                     save_fig = info[0] if t == max_timesteps - 1 else None
-                    save_fig_path = f'results_png/demo_{rolltime_count}_{rollouts_times}.png' if save_fig else None
+                    save_fig_path = str(Path(__file__).parent.parent / f'results_png/demo_{rolltime_count}_{rollouts_times}.png') if save_fig else None
                     #此处包含实时绘制参数
                     env.render(escape_rate, reward, done, save_fig_path)
                     # role_features: list of dicts → (n_agents, 2) float array
