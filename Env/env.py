@@ -448,7 +448,11 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         pygame.display.update()
         if save_path_name is not None:
             os.makedirs(os.path.dirname(save_path_name), exist_ok=True)
-            pygame.image.save(self.window, save_path_name)
+            # 使用 PIL 绕过 pygame 对中文路径的支持问题
+            from PIL import Image
+            surf_array = pygame.surfarray.array3d(self.window)
+            surf_array = surf_array.transpose([1, 0, 2])  # (w,h,3) -> (h,w,3)
+            Image.fromarray(surf_array).save(save_path_name)
 
         # Check for quit event
         for event in pygame.event.get():
