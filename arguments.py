@@ -10,7 +10,8 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9;8.0;7.5"
 # 锁定使用你的 RTX 5070
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
-
+torch.backends.cudnn.benchmark = True  # 自动优化CUDA内核
+torch.set_float32_matmul_precision('medium')  # 启用半精度矩阵计算
 
 # 1. 强制PyTorch为RTX5070（算力8.9）生成适配的CUDA内核
 os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9;8.0;7.5"  # 8.9=RTX5070，向下兼容30/20系
@@ -30,7 +31,7 @@ class Args:
     seed = 125  # 123
     n_agent = 3#智能体数量
     clip_obs = 5
-    actor_num = 6
+    actor_num = 12#actor数量
     clip_range = 200
     action_bound = 1
     demo_length = 25  # 20
@@ -70,20 +71,20 @@ class Args:
         'actor_num' : actor_num,
         'date' : date,
         'checkpoint' : None,
-        'polyak' : 0.95,  # 软更新率
-        'action_l2' : 1, #  actor_loss += self.args.action_l2 * (acts_real_tensor / self.env_params['action_max']).pow(2).mean()
-        'noise_eps' : 0.01,  # epsillon 精度
-        'random_eps' : 0.3,
+        'polyak' : 0.96,  # 软更新率
+        'action_l2' : 0.5, #  actor_loss += self.args.action_l2 * (acts_real_tensor / self.env_params['action_max']).pow(2).mean()
+        'noise_eps' : 0.05,  # epsillon 精度
+        'random_eps' : 0.75,
         'theta' : 0.1, # GAIL reward weight
         'Is_train_discrim': True,
-        'roll_time' : 2,
-        'gamma' : 0.98,
-        'batch_size' :  256,
-        'buffer_size' : 1e6, 
+        'roll_time' : 4,
+        'gamma' : 0.99,
+        'batch_size' :  4096,
+        'buffer_size' : 4e6, 
         'device' : DEVICE,
-        'lr_actor' : 0.001,
-        'lr_critic' : 0.001,
-        'mixer_embed_dim' : 32,
+        'lr_actor' : 3e-4,
+        'lr_critic' : 3e-4,
+        'mixer_embed_dim' : 512,
         'lr_disc' : 0.001,
         'clip_obs' : clip_obs,
         'clip_range' : 200,
