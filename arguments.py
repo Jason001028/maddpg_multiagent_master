@@ -37,7 +37,7 @@ class Args:
     Use_GUI = True
     env_params = edict({    
         'n_agents' :  n_agent,
-        'dim_observation' : 21, 
+        'dim_observation' : 36,
         'dim_action' : 5,
         'dim_hand' :  3,
         'dim_achieved_goal' :  3,
@@ -76,6 +76,7 @@ class Args:
         'device' : DEVICE,
         'lr_actor' : 0.001,
         'lr_critic' : 0.001,
+        'mixer_embed_dim' : 32,
         'lr_disc' : 0.001,
         'clip_obs' : clip_obs,
         'clip_range' : 200,
@@ -90,7 +91,11 @@ class Args:
 
     train_params.update(env_params)
 
-    algo_name = 'legacy_maddpg'
+    # 可用算法列表：
+    # 'legacy_maddpg' — 共享参数的单网络 MADDPG，全局 Critic 拼接所有智能体观测/动作，适合同构基线对比
+    # 'vdn'           — 异构 VDN，每个智能体独立 Actor+LocalCritic，Q_tot=ΣQ_i，当前主实验算法
+    # 'qmix'          — 异构 QMIX，独立Actor+局部Critic+单调混合网络，非线性融合局部Q值，复杂协作任务精度优于VDN
+    algo_name = 'qmix'
 
     # 异构体角色特征向量 E_i：task_rate 决定任务量上限，viewrange 决定迷雾清除半径
     # 顺序对应 agent 0（explorer）、1（postman）、2（surveyor）

@@ -1,4 +1,6 @@
 import os
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 import random
 import torch
 import numpy as np

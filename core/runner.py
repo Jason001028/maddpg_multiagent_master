@@ -32,7 +32,7 @@ class Runner:
             p = self.ctx.Process(
                 target=actor_worker,
                 args=(self.data_queue, self.actor_queues[i], i,
-                      self.logger, self.origin_obstacle_states),
+                      self.origin_obstacle_states),
                 daemon=True,
             )
             self._processes.append(p)
@@ -40,7 +40,7 @@ class Runner:
         self._processes.append(self.ctx.Process(
             target=learn,
             args=(self.model_path, self.data_queue, self.evalue_queue,
-                  self.actor_queues, self.logger),
+                  self.actor_queues),
             daemon=True,
         ))
 
@@ -48,7 +48,7 @@ class Runner:
             target=evaluate_worker,
             args=(self.train_params, self.env_params, self.model_path,
                   self.train_params.evalue_time, self.evalue_queue,
-                  self.logger, self.origin_obstacle_states),
+                  self.origin_obstacle_states),
             daemon=True,
         ))
 

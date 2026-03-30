@@ -1,8 +1,11 @@
 import logging
 import os.path
 import time
+import colorama
 from colorama import Fore, Style
 import sys
+
+colorama.init()
 
 class Logger(object):
     def __init__(self, logger):

@@ -1,4 +1,5 @@
-
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 import sys
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.resolve().as_posix())
@@ -25,10 +26,11 @@ def actor_worker(
     data_queue,
     actor_queue,
     actor_index,
-    logger,
     origin_obstacle_states
 ):
     try:
+        from core.logger import Logger
+        logger = Logger(logger=f"actor_{actor_index}")
         logger.info(f"Actor {actor_index} started.")
         # init env
         env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states, agent_configs=Args.role_configs))

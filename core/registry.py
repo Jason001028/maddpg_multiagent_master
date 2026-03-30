@@ -1,7 +1,11 @@
 from core.legacy_maddpg import LegacyMADDPG
+from core.vdn import ContinuousVDN
+from core.qmix import ContinuousQMIX
 
 _REGISTRY = {
     'legacy_maddpg': LegacyMADDPG,
+    'vdn': ContinuousVDN,
+    'qmix': ContinuousQMIX,
 }
 
 

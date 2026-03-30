@@ -33,9 +33,10 @@ def evaluate_worker(
         plot_path,
         evalue_time,
         evalue_queue,
-        logger,
         origin_obstacle_states
     ):
+    from core.logger import Logger
+    logger = Logger(logger="evaluator")
     csv_file_name = initialize_csv(plot_path)  #初始化csv文件，仅有title
     env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states, agent_configs=Args.role_configs))
     actors = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
@@ -46,7 +47,8 @@ def evaluate_worker(
             data = evalue_queue.get()
             evaluate_step = data['step']
             actors.sync_actor(data)
-            actors.model.actor.eval()
+            for a in actors.model.actors:
+                a.eval()
             total_rewards = []
             max_timesteps = env_params.max_timesteps
             for i in range(evalue_time):

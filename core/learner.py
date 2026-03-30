@@ -16,7 +16,9 @@ def store_buffer(buffer, data_queue):
         buffer.push(data_queue.get(block=True))
 
 
-def learn(model_path, data_queue, evalue_queue, actor_queues, logger):
+def learn(model_path, data_queue, evalue_queue, actor_queues):
+    from core.logger import Logger
+    logger = Logger(logger="learner")
     algo = get_algorithm(Args.algo_name, Args, env_params, device=device)
     buffer = replay_buffer(env_params, train_params, logger)
     Actor_loss, Critic_loss = 0, 0

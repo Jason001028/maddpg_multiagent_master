@@ -109,3 +109,59 @@ class VDNNet(nn.Module):
     def update(self, model):
         for a, src in zip(self.actors, model.actors):
             a.load_state_dict(src.state_dict())
+
+
+# ── QMIX 所需网络组件 ─────────────────────────────────────────────────────────
+
+class QMixer(nn.Module):
+    """超网络生成动态权重的单调混合网络，满足 IGM 约束"""
+    def __init__(self, n_agents, state_dim, embed_dim=32):
+        super().__init__()
+        self.n_agents  = n_agents
+        self.embed_dim = embed_dim
+
+        self.hyper_w1 = nn.Linear(state_dim, n_agents * embed_dim)
+        self.hyper_b1 = nn.Linear(state_dim, embed_dim)
+        self.hyper_w2 = nn.Linear(state_dim, embed_dim)
+        self.hyper_b2 = nn.Sequential(
+            nn.Linear(state_dim, embed_dim), nn.ReLU(),
+            nn.Linear(embed_dim, 1)
+        )
+
+    def forward(self, q_locals, states):
+        # q_locals: (B, N)   states: (B, state_dim)
+        B = q_locals.size(0)
+        q = q_locals.view(B, 1, self.n_agents)                          # (B,1,N)
+
+        w1 = th.abs(self.hyper_w1(states)).view(B, self.n_agents, self.embed_dim)  # (B,N,E)
+        b1 = self.hyper_b1(states).view(B, 1, self.embed_dim)                      # (B,1,E)
+        hidden = F.elu(th.bmm(q, w1) + b1)                             # (B,1,E)
+
+        w2 = th.abs(self.hyper_w2(states)).view(B, self.embed_dim, 1)  # (B,E,1)
+        b2 = self.hyper_b2(states).view(B, 1, 1)                       # (B,1,1)
+        q_tot = (th.bmm(hidden, w2) + b2).view(B, 1)                   # (B,1)
+        return q_tot
+
+
+class QMIXNet(nn.Module):
+    """n_agents 个独立 ActorNetwork + LocalCritic + QMixer"""
+    def __init__(self, env_params, embed_dim=32, device='cpu'):
+        super().__init__()
+        self.n_agents = env_params.n_agents
+        dim_obs  = env_params.dim_observation
+        dim_act  = env_params.dim_action
+        state_dim = self.n_agents * dim_obs
+
+        self.actors  = nn.ModuleList([ActorNetwork(dim_obs, dim_act) for _ in range(self.n_agents)])
+        self.critics = nn.ModuleList([LocalCritic(dim_obs, dim_act)  for _ in range(self.n_agents)])
+        self.mixer   = QMixer(self.n_agents, state_dim, embed_dim)
+
+        self.actors_target  = deepcopy(self.actors)
+        self.critics_target = deepcopy(self.critics)
+        self.mixer_target   = deepcopy(self.mixer)
+
+        self.to(device)
+
+    def update(self, model):
+        for a, src in zip(self.actors, model.actors):
+            a.load_state_dict(src.state_dict())
