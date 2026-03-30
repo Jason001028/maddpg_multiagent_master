@@ -77,9 +77,9 @@ class Gridworld(gym.Env):
         self.agent_task_viewrange = [c['viewrange'] for c in agent_configs]
 
         self.agent_cover_count = [0] * agent_num
-        self.agent0_cover = []
-        self.agent1_cover = []
-        self.agent2_cover = []
+        self.agent0_cover = set()
+        self.agent1_cover = set()
+        self.agent2_cover = set()
 
         self.agent0_move_count = 0
         self.agent1_move_count = 0
@@ -103,9 +103,9 @@ class Gridworld(gym.Env):
                 self.origin_current_state.append([x,y])
                 origin_pos_tmp -= 1
         # init goal pos\
-        self.agent0_cover.append(self.origin_current_state[0])
-        self.agent1_cover.append(self.origin_current_state[1])
-        self.agent2_cover.append(self.origin_current_state[2])
+        self.agent0_cover.add(tuple(self.origin_current_state[0]))
+        self.agent1_cover.add(tuple(self.origin_current_state[1]))
+        self.agent2_cover.add(tuple(self.origin_current_state[2]))
         self.obstacle_movement_prob = 0.05
         self.max_step = 200
 
@@ -121,13 +121,15 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
     ##地图迷雾函数
     def smog(self):
         self.goal_state = []
+        self.goal_state_set = set()
         self.smog_count = 0
         goal_smog_tmp = (self.grid_size-1)^2
         while goal_smog_tmp > 0:
             for x in range(0, self.grid_size):
                 for y in range(0, self.grid_size):
-                    if [x, y] not in self.origin_obstacle_states and [x, y] not in self.goal_state and [x, y] not in self.origin_current_state and [x,y] not in self.origin_stable_obstacle_states:
+                    if [x, y] not in self.origin_obstacle_states and (x, y) not in self.goal_state_set and [x, y] not in self.origin_current_state and [x,y] not in self.origin_stable_obstacle_states:
                         self.goal_state.append([x, y])
+                        self.goal_state_set.add((x, y))
                         self.smog_count += 1
                         goal_smog_tmp -= 1
         return self.smog_count
@@ -158,6 +160,9 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         self.smog_realtime_count = self.smog()
         self.smog_initial_count = self.smog_realtime_count
         self.agent_cover_count = [0] * self.agent_num
+        self.agent0_cover.clear()
+        self.agent1_cover.clear()
+        self.agent2_cover.clear()
         self.postman_target = 2
         self.postman_relay_count = 0
 
@@ -187,34 +192,31 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         if i == 0:
             for y in range(my_y - self.agent_task_viewrange[i], my_y + self.agent_task_viewrange[i] + 1):
                 for x in range(my_x - self.agent_task_viewrange[i], my_x + self.agent_task_viewrange[i] + 1):
-                    if [x, y] in self.goal_state:
+                    if (x, y) in self.goal_state_set:
                         self.goal_state.remove([x, y])
-                        # if [x, y] not in self.agent1_cover and [x, y] not in self.agent2_cover:
-                        if [x, y] not in self.agent2_cover:
-                            self.agent0_cover.append([x, y])
+                        self.goal_state_set.discard((x, y))
+                        if (x, y) not in self.agent2_cover:
+                            self.agent0_cover.add((x, y))
                             self.agent_cover_count[i] += 1
                         count_remove = count_remove+1
-                    else:
-                        pass
         if i == 1:
-            if [my_x , my_y] in self.goal_state:
+            if (my_x, my_y) in self.goal_state_set:
                 self.goal_state.remove([my_x, my_y])
-                if [my_x , my_y] not in self.agent0_cover and [my_x, my_y] not in self.agent2_cover:
-                    self.agent1_cover.append([my_x , my_y])
+                self.goal_state_set.discard((my_x, my_y))
+                if (my_x, my_y) not in self.agent0_cover and (my_x, my_y) not in self.agent2_cover:
+                    self.agent1_cover.add((my_x, my_y))
                     self.agent_cover_count[i] += 1
                 count_remove = count_remove + 1
         if i == 2:
             for y in range(my_y - self.agent_task_viewrange[i], my_y + self.agent_task_viewrange[i] + 1):
                 for x in range(my_x - self.agent_task_viewrange[i], my_x + self.agent_task_viewrange[i] + 1):
-                    if [x, y] in self.goal_state:
-                        # for  and [x,y] not in self.origin_stable_obstacle_states
+                    if (x, y) in self.goal_state_set:
                         self.goal_state.remove([x, y])
-                        if [x, y] not in self.agent0_cover and [x, y] not in self.agent1_cover:
-                            self.agent2_cover.append([x, y])
+                        self.goal_state_set.discard((x, y))
+                        if (x, y) not in self.agent0_cover and (x, y) not in self.agent1_cover:
+                            self.agent2_cover.add((x, y))
                             self.agent_cover_count[i] += 1
                         count_remove = count_remove+1
-                    else:
-                        pass
 
         return count_remove
 
@@ -251,7 +253,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         agent_id[i] = 1
         total_obs.extend(agent_id)
         # is in goal
-        is_in_goal = 1 if self.current_state[i] in self.goal_state else 0
+        is_in_goal = 1 if tuple(self.current_state[i]) in self.goal_state_set else 0
         total_obs.append(is_in_goal)
         return total_obs
     
@@ -396,9 +398,6 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         for grid3 in self.agent2_cover:
             color = (142, 215, 238)
             pygame.draw.rect(self.window, color, (grid3[1] * row_size, grid3[0] * col_size, row_size, col_size))
-        for grid1 in self.agent0_cover:
-            color = (143, 170, 220)
-            pygame.draw.rect(self.window, color, (grid1[1] * row_size, grid1[0] * col_size, row_size, col_size))
 
         # Draw smog 地图迷雾
         for goal in self.goal_state:
