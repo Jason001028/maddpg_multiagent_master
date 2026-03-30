@@ -4,153 +4,134 @@ from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.resolve().as_posix())
 
 import time
-import os
-import csv
-from matplotlib import pyplot as plt
-import pygame
 from core.registry import get_algorithm
 from Env.env import Gridworld
 from Env.reward_wrapper import RewardWrapper
 from arguments import Args
 
-def initialize_csv(path):
-    file_name = os.path.join(path, 'training_data.csv')
-    keys = ['step' , 'actor_loss', 'critic_loss', 'rewards']
-    with open(file_name, 'a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(keys)
-    return file_name
 
-import imageio
-if not os.path.exists('results_png'):
-    os.mkdir('results_png/')
-if not os.path.exists('results_eval_png'):
-    os.mkdir('results_eval_png/')
+class Evaluator:
+    """
+    基于论文公式的多项式评估系统。
+    权重 ω1~ω6 对应: success, reward, time, energy, collision, distance
+    """
+    def __init__(self, env, algo, max_timesteps,
+                 w1=1.0, w2=1.0, w3=1.0, w4=1.0, w5=1.0, w6=1.0):
+        self.env = env
+        self.algo = algo
+        self.max_timesteps = max_timesteps
+        self.weights = (w1, w2, w3, w4, w5, w6)
+
+    def evaluate_model(self, n_episodes: int) -> dict:
+        w1, w2, w3, w4, w5, w6 = self.weights
+
+        n_success = 0
+        sum_reward = 0.0
+        sum_time_success = 0.0
+        sum_energy = 0.0
+        sum_collision = 0.0
+        sum_distance_success = 0.0
+
+        for _ in range(n_episodes):
+            obs = self.env.reset()
+            ep_reward = 0.0
+            ep_energy = 0.0
+            ep_collision = 0
+            ep_distance = 0.0
+            ep_steps = 0
+            ep_success = False
+
+            for t in range(self.max_timesteps):
+                actions = self.algo.act(obs, explore=False)
+                step_result = self.env.step(t, actions)
+                if len(step_result) == 6:
+                    _, _, reward, obs, dones, info = step_result
+                else:
+                    obs, reward, dones, info = step_result
+
+                info0 = info[0]
+                ep_reward += sum(reward)
+                ep_energy += info0.get('energy_cost', 0.0)
+                ep_collision += info0.get('collisions', 0)
+                ep_distance += info0.get('distance_delta', 0.0)
+                ep_steps += 1
+
+                if dones[0]:
+                    ep_success = info0.get('is_success', False)
+                    break
+
+            sum_reward += ep_reward
+            sum_energy += ep_energy
+            sum_collision += ep_collision
+
+            if ep_success:
+                n_success += 1
+                sum_time_success += ep_steps
+                sum_distance_success += ep_distance
+
+        E_success = n_success / n_episodes
+        E_reward = sum_reward / n_episodes
+        # 防除零：成功数为0时用最大惩罚值
+        E_time = sum_time_success / n_success if n_success > 0 else float(self.max_timesteps)
+        E_energy = sum_energy / n_episodes
+        E_collision = sum_collision / n_episodes
+        E_distance = sum_distance_success / n_success if n_success > 0 else float(self.max_timesteps)
+
+        fitness = (w1 * E_success + w2 * E_reward
+                   - w3 * E_time - w4 * E_energy
+                   - w5 * E_collision - w6 * E_distance)
+
+        return {
+            'success_rate': E_success,
+            'mean_reward': E_reward,
+            'mean_time': E_time,
+            'mean_energy': E_energy,
+            'mean_collision': E_collision,
+            'mean_distance': E_distance,
+            'fitness': fitness,
+        }
+
 
 def evaluate_worker(
-        train_params,
+        __train_params,
         env_params,
         plot_path,
         evalue_time,
         evalue_queue,
-        origin_obstacle_states
+        origin_obstacle_states,
     ):
     from core.logger import Logger
     logger = Logger(logger="evaluator")
-    csv_file_name = initialize_csv(plot_path)  #初始化csv文件，仅有title
     env = RewardWrapper(Gridworld(obstacles=origin_obstacle_states, agent_configs=Args.role_configs))
-    actors = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
-    total_evalue_time = 0 
+    algo = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
+
+    evaluator = Evaluator(env, algo, max_timesteps=env_params.max_timesteps)
+
     while True:
         if not evalue_queue.empty():
-            total_evalue_time += 1
             data = evalue_queue.get()
             evaluate_step = data['step']
-            actors.sync_actor(data)
-            for a in actors.model.actors:
+            algo.sync_actor(data)
+            for a in algo.model.actors:
                 a.eval()
-            total_rewards = []
-            max_timesteps = env_params.max_timesteps
-            for i in range(evalue_time):
-                reward_tmp = []
-                obs = env.reset() # reset the environment
 
-                # start to do the demo
-                for t in range(max_timesteps):
-                    actions = actors.act(obs, explore=False)
-                    # put actions into the environment
-                    step_result = env.step(t, actions)
-                    if len(step_result) == 6:
-                        _, _, reward, observation_new, dones, info = step_result
-                    else:
-                        observation_new, reward, dones, info = step_result
-                    escape_rate = info[0].get('escape_rate', 0)
-                    # print(f'reward {reward} actions {actions} , dones: {done}')
-                    save_fig_path = f'results_eval_png/demo_{total_evalue_time}_{i}.png' if t == max_timesteps - 1 else None
-                    env.render(escape_rate, reward, dones, save_fig_path)
-                    obs = observation_new
-                    reward_tmp.append(sum(reward))
-                    if dones[0]:
-                        break
-                # save frame
-                total_rewards.append(sum(reward_tmp))
+            metrics = evaluator.evaluate_model(n_episodes=evalue_time)
+            metrics['step'] = evaluate_step
+            metrics['actor_loss'] = data.get('actor_loss', 0.0)
+            metrics['critic_loss'] = data.get('critic_loss', 0.0)
 
-
-
-            ### 画折线图
-            logger.info(f' evaluate_step : {evaluate_step} success rate:{sum(reward_tmp)/evalue_time}')
-            plot(
-                train_params.env_name,
-                f'{plot_path}/plot.png',
-                csv_file_name, 
-                {
-                    'step' : evaluate_step,
-                    'actor_loss' : data['actor_loss'],
-                    'critic_loss': data['critic_loss'],
-                    'rewards': sum(reward_tmp)/evalue_time
-                }
+            logger.info(
+                f"eval step={evaluate_step} | "
+                f"success={metrics['success_rate']:.3f} | "
+                f"reward={metrics['mean_reward']:.2f} | "
+                f"time={metrics['mean_time']:.1f} | "
+                f"energy={metrics['mean_energy']:.2f} | "
+                f"collision={metrics['mean_collision']:.2f} | "
+                f"distance={metrics['mean_distance']:.2f} | "
+                f"fitness={metrics['fitness']:.3f}"
             )
-            # plot(
-            #     train_params.env_name,
-            #     f'{plot_path}/cover_count.png',
-            #     csv_file_name,
-            #     {
-            #         'agent0' : agent_cover[0],
-            #         'agent1' : agent_cover[1],
-            #         'agent2': agent_cover[2],
-            #     }
-            # )
+
+            from core.logger import log_eval_metrics
+            log_eval_metrics(plot_path, metrics)
         else:
             time.sleep(30)
-
-def plot(test_env_name, plot_path, csv_file_name, data) -> object:
-    total_data = {key : [] for key in data.keys()}
-    # write
-    with open(csv_file_name, mode = 'a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow([value for value in data.values()])
-    # read 
-    with open(csv_file_name, mode = 'r', newline='') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            for key in total_data.keys():
-                total_data[key].append(float(row[key]))
-    total_data = {key : val for key,val in total_data.items()}
-    N_COLUMN = 3
-    fig, axes = plt.subplots(nrows = 1, ncols = N_COLUMN, figsize=(18,6))
-    fig.suptitle(test_env_name, fontsize=10)
-
-    for i, key in enumerate(total_data.keys()):
-        if key == 'step':
-            continue
-        ax = axes[i-1]
-        ax.ticklabel_format(style='sci', scilimits=(-1,2), axis='x')
-        ax.set_title(key)
-        ax.plot(total_data["step"], total_data[key])
-    plt.savefig(plot_path)
-    plt.close()
-
-
-#  from random import random
-#  import numpy as np
-#  from arguments import Args
-# time = 0
-# def generate_data(): 
-#     global time
-#     time += 1
-#     return  {
-#         'step' :2000*time,
-#         'actor_loss' : 0.5 + random(),
-#         'critic_loss': 0.6 + random(),
-#         'success_rate': 0.8 + random()
-#     }
-# test_env_name = 'armrobot_push_ seed125_10_31_21'
-# plot_path = os.path.join(Args.train_params.save_dir, test_env_name)
-# csv_file_name = initialize_csv(plot_path, generate_data().keys())  
-# for _ in range(1000):
-#     plot(
-#         test_env_name,
-#         f'{plot_path}/plot.png', 
-#         csv_file_name, 
-#         generate_data()
-#     )
