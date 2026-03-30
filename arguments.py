@@ -52,10 +52,17 @@ class Args:
     # 自动检测CUDA，生成torch.device对象（更稳定）
     DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+    # 可用算法列表：
+    # 'legacy_maddpg' — 共享参数的单网络 MADDPG，全局 Critic 拼接所有智能体观测/动作，适合同构基线对比
+    # 'vdn'           — 异构 VDN，每个智能体独立 Actor+LocalCritic，Q_tot=ΣQ_i，当前主实验算法
+    # 'qmix'          — 异构 QMIX，独立Actor+局部Critic+单调混合网络，非线性融合局部Q值，复杂协作任务精度优于VDN
+    algo_name = 'qmix'
+
     train_params = edict({
         # params for multipross
         #1e7 → 2e5
-        'learner_step' : int(1e5),
+        #'learner_step' : int(1e5),
+        'learner_step' : int(48000),#200epoch
         'update_tar_interval' : 40,
         'evalue_interval' : 240,
         'evalue_time' : 5,  # evaluation num per epoch
@@ -83,19 +90,13 @@ class Args:
         'add_demo' : False,
         'save_dir' : 'saved_models/',
         'seed' : seed,
-        'env_name' : 'grid_world_' + "seed" +str(seed) + '_' + str(date),
+        'env_name' : algo_name + '_grid_world_' + "seed" +str(seed) + '_' + str(date),
         'demo_name' : 'armrobot_100_push_demo.npz',
         'replay_strategy' : 'future',# 后见经验采样策略
         'replay_k' :  4  # 后见经验采样的参数
     })
 
     train_params.update(env_params)
-
-    # 可用算法列表：
-    # 'legacy_maddpg' — 共享参数的单网络 MADDPG，全局 Critic 拼接所有智能体观测/动作，适合同构基线对比
-    # 'vdn'           — 异构 VDN，每个智能体独立 Actor+LocalCritic，Q_tot=ΣQ_i，当前主实验算法
-    # 'qmix'          — 异构 QMIX，独立Actor+局部Critic+单调混合网络，非线性融合局部Q值，复杂协作任务精度优于VDN
-    algo_name = 'qmix'
 
     # 异构体角色特征向量 E_i：task_rate 决定任务量上限，viewrange 决定迷雾清除半径
     # 顺序对应 agent 0（explorer）、1（postman）、2（surveyor）
