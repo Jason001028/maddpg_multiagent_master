@@ -1,4 +1,5 @@
 import os
+import argparse
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 import random
@@ -29,6 +30,19 @@ def load_obstacle_states():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--algo', type=str, default=None, choices=['qmix', 'vdn', 'legacy_maddpg'])
+    parser.add_argument('--epochs', type=int, default=None)
+    cli = parser.parse_args()
+
+    if cli.algo is not None:
+        args.algo_name = cli.algo
+        args.train_params['env_name'] = cli.algo + '_grid_world_' + "seed" + str(args.seed) + '_' + args.train_params['date']
+
+    if cli.epochs is not None:
+        # evalue_interval steps per epoch
+        args.train_params['learner_step'] = cli.epochs * args.train_params['evalue_interval']
+
     os.environ['OMP_NUM_THREADS'] = "1"
     os.environ['MKL_NUM_THREADS'] = "1"
     torch.set_num_threads(1)

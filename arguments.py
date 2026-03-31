@@ -10,7 +10,8 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9;8.0;7.5"
 # 锁定使用你的 RTX 5070
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
-
+torch.backends.cudnn.benchmark = True  # 自动优化CUDA内核
+torch.set_float32_matmul_precision('medium')  # 启用半精度矩阵计算
 
 # 1. 强制PyTorch为RTX5070（算力8.9）生成适配的CUDA内核
 os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9;8.0;7.5"  # 8.9=RTX5070，向下兼容30/20系
@@ -30,7 +31,7 @@ class Args:
     seed = 125  # 123
     n_agent = 3#智能体数量
     clip_obs = 5
-    actor_num = 6
+    actor_num = 12#actor数量
     clip_range = 200
     action_bound = 1
     demo_length = 25  # 20
@@ -43,7 +44,7 @@ class Args:
         'dim_achieved_goal' :  3,
         'clip_obs' : clip_obs,
         'dim_goal' :  3,
-        'max_timesteps' : 100,  #400→150→100
+        'max_timesteps' : 50,  #400→150→100->50
         'action_max' : 1
         })
     #max_timesteps:200→400
@@ -52,10 +53,17 @@ class Args:
     # 自动检测CUDA，生成torch.device对象（更稳定）
     DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+    # 可用算法列表：
+    # 'legacy_maddpg' — 共享参数的单网络 MADDPG，全局 Critic 拼接所有智能体观测/动作，适合同构基线对比
+    # 'vdn'           — 异构 VDN，每个智能体独立 Actor+LocalCritic，Q_tot=ΣQ_i，当前主实验算法
+    # 'qmix'          — 异构 QMIX，独立Actor+局部Critic+单调混合网络，非线性融合局部Q值，复杂协作任务精度优于VDN
+    algo_name = 'qmix'
+
     train_params = edict({
         # params for multipross
         #1e7 → 2e5
-        'learner_step' : int(1e5),
+        #'learner_step' : int(1e5),
+        'learner_step' : int(48000),#200epoch
         'update_tar_interval' : 40,
         'evalue_interval' : 240,
         'evalue_time' : 5,  # evaluation num per epoch
@@ -63,27 +71,27 @@ class Args:
         'actor_num' : actor_num,
         'date' : date,
         'checkpoint' : None,
-        'polyak' : 0.95,  # 软更新率
-        'action_l2' : 1, #  actor_loss += self.args.action_l2 * (acts_real_tensor / self.env_params['action_max']).pow(2).mean()
-        'noise_eps' : 0.01,  # epsillon 精度
-        'random_eps' : 0.3,
+        'polyak' : 0.96,  # 软更新率
+        'action_l2' : 0.5, #  actor_loss += self.args.action_l2 * (acts_real_tensor / self.env_params['action_max']).pow(2).mean()
+        'noise_eps' : 0.05,  # epsillon 精度
+        'random_eps' : 0.75,
         'theta' : 0.1, # GAIL reward weight
         'Is_train_discrim': True,
-        'roll_time' : 2,
-        'gamma' : 0.98,
-        'batch_size' :  256,
-        'buffer_size' : 1e6, 
+        'roll_time' : 4,
+        'gamma' : 0.99,
+        'batch_size' :  4096,
+        'buffer_size' : 4e6, 
         'device' : DEVICE,
-        'lr_actor' : 0.001,
-        'lr_critic' : 0.001,
-        'mixer_embed_dim' : 32,
+        'lr_actor' : 3e-4,
+        'lr_critic' : 3e-4,
+        'mixer_embed_dim' : 512,
         'lr_disc' : 0.001,
         'clip_obs' : clip_obs,
         'clip_range' : 200,
         'add_demo' : False,
         'save_dir' : 'saved_models/',
         'seed' : seed,
-        'env_name' : 'grid_world_' + "seed" +str(seed) + '_' + str(date),
+        'env_name' : algo_name + '_grid_world_' + "seed" +str(seed) + '_' + str(date),
         'demo_name' : 'armrobot_100_push_demo.npz',
         'replay_strategy' : 'future',# 后见经验采样策略
         'replay_k' :  4  # 后见经验采样的参数
@@ -91,18 +99,12 @@ class Args:
 
     train_params.update(env_params)
 
-    # 可用算法列表：
-    # 'legacy_maddpg' — 共享参数的单网络 MADDPG，全局 Critic 拼接所有智能体观测/动作，适合同构基线对比
-    # 'vdn'           — 异构 VDN，每个智能体独立 Actor+LocalCritic，Q_tot=ΣQ_i，当前主实验算法
-    # 'qmix'          — 异构 QMIX，独立Actor+局部Critic+单调混合网络，非线性融合局部Q值，复杂协作任务精度优于VDN
-    algo_name = 'qmix'
-
     # 异构体角色特征向量 E_i：task_rate 决定任务量上限，viewrange 决定迷雾清除半径
     # 顺序对应 agent 0（explorer）、1（postman）、2（surveyor）
     role_configs = [
         {'task_rate': 0.3, 'viewrange': 1},   # explorer
         {'task_rate': 0.0, 'viewrange': 0},   # postman
-        {'task_rate': 0.7, 'viewrange': 4},   # surveyor
+        {'task_rate': 0.7, 'viewrange': 3},   # surveyor
     ]
 
 
