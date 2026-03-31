@@ -36,6 +36,7 @@ class Args:
     action_bound = 1
     demo_length = 25  # 20
     Use_GUI = False
+    log_actor = False  # 是否输出actor发送数据的日志（True=输出，False=屏蔽）
     env_params = edict({    
         'n_agents' :  n_agent,
         'dim_observation' : 36,
@@ -72,9 +73,9 @@ class Args:
         'date' : date,
         'checkpoint' : None,
         'polyak' : 0.96,  # 软更新率
-        'action_l2' : 0.5, #  actor_loss += self.args.action_l2 * (acts_real_tensor / self.env_params['action_max']).pow(2).mean()
-        'noise_eps' : 0.05,  # epsillon 精度
-        'random_eps' : 0.75,
+        'action_l2' : 0.05, #  动作幅度惩罚（0.5有点高）  actor_loss += self.args.action_l2 * (acts_real_tensor / self.env_params['action_max']).pow(2).mean()
+        'initial_eps' : 1.0,
+        'final_eps'   : 0.05,
         'theta' : 0.1, # GAIL reward weight
         'Is_train_discrim': True,
         'roll_time' : 4,
@@ -98,11 +99,12 @@ class Args:
     })
 
     train_params.update(env_params)
+    train_params['decay_steps'] = int(train_params.learner_step * 0.5) #衰减跨度：50%learning_step
 
     # 异构体角色特征向量 E_i：task_rate 决定任务量上限，viewrange 决定迷雾清除半径
     # 顺序对应 agent 0（explorer）、1（postman）、2（surveyor）
     role_configs = [
-        {'task_rate': 0.3, 'viewrange': 1},   # explorer
+        {'task_rate': 0.3, 'viewrange': 2},   # explorer
         {'task_rate': 0.0, 'viewrange': 0},   # postman
         {'task_rate': 0.7, 'viewrange': 3},   # surveyor
     ]

@@ -56,6 +56,7 @@ class Gridworld(gym.Env):
         #安全距离
         self.safe_dis = 5
         self.total_clear = 0
+        self.milestone_triggered = set()
         self.smog_count = 0
         #初始迷雾量
         self.smog_initial_count = 0
@@ -166,6 +167,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         self.smog_realtime_count = self.smog()
         self.smog_initial_count = self.smog_realtime_count
         self.total_clear = 0
+        self.milestone_triggered = set()  # 已触发的里程碑集合
         self.agent_cover_count = [0] * self.agent_num
         self.agent0_cover.clear()
         self.agent1_cover.clear()
@@ -364,8 +366,9 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
 
     def get_is_done(self):
             if self.cur_step >= self.max_step:
-                return True, 0
-            if self.total_clear != self.smog_initial_count:
+                coverage = self.total_clear / self.smog_initial_count if self.smog_initial_count > 0 else 0.0
+                return True, 1 if coverage >= 0.8 else 0
+            if self.smog_initial_count > 0 and self.total_clear / self.smog_initial_count < 0.8:
                 return False, 0
             return True, 1
 

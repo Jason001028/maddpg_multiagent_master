@@ -29,6 +29,17 @@ class MARLRewardWrapper(gym.Wrapper):
         # --- Layer 1: Global shared rewards ---
         global_r = -0.1  # 连坐时间惩罚
         global_r += sum(count_oneclear_total) * 0.5  # 全局增量奖励
+
+        # 里程碑奖励（25% / 50% / 75% / 80% / 90% / 100%）
+        # 80%是成功门槛，90%/100%鼓励更高完成度
+        if env.smog_initial_count > 0:
+            coverage = env.total_clear / env.smog_initial_count
+            for threshold, bonus in ((0.25, 20.0), (0.50, 40.0), (0.75, 60.0),
+                                     (0.80, 80.0), (0.90, 30.0), (1.00, 50.0)):
+                if coverage >= threshold and threshold not in env.milestone_triggered:
+                    env.milestone_triggered.add(threshold)
+                    global_r += bonus
+
         if env.smog_realtime_count <= 0:
             global_r += 50.0  # 终局巨额奖励
 

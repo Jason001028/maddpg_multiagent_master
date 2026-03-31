@@ -9,6 +9,9 @@ train_params = Args.train_params
 batch_size = train_params.batch_size
 evalue_interval = train_params.evalue_interval
 device = train_params.device
+initial_eps = train_params.initial_eps
+final_eps   = train_params.final_eps
+decay_steps = train_params.decay_steps
 
 
 def store_buffer(buffer, data_queue):
@@ -25,7 +28,9 @@ def learn(model_path, data_queue, evalue_queue, actor_queues):
     savetime = 0
 
     for queue in actor_queues:
-        queue.put(algo.get_actor_state_dict())
+        init_params = algo.get_actor_state_dict()
+        init_params['current_eps'] = initial_eps
+        queue.put(init_params)
 
     while buffer.current_size < batch_size:
         store_buffer(buffer, data_queue)
@@ -43,11 +48,13 @@ def learn(model_path, data_queue, evalue_queue, actor_queues):
             logger.info(f'epoch: {step // evalue_interval}, cur step: {step}')
 
         if step % evalue_interval == 0:
+            current_eps = max(final_eps, initial_eps - (initial_eps - final_eps) * step / decay_steps)
             Actor_loss /= evalue_interval
             Critic_loss /= evalue_interval
-            logger.info(f'epoch: {step // evalue_interval}, cur step: {step}, actor loss:{Actor_loss:.4f}, critic loss:{Critic_loss:.4f}')
+            logger.info(f'epoch: {step // evalue_interval}, cur step: {step}, eps: {current_eps:.4f}, actor loss:{Actor_loss:.4f}, critic loss:{Critic_loss:.4f}')
 
             model_params = algo.get_actor_state_dict()
+            model_params['current_eps'] = current_eps
             for queue in actor_queues:
                 queue.put(model_params)
 

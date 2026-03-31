@@ -37,12 +37,14 @@ def actor_worker(
         store_item = ['obs', 'next_obs', 'acts', 'reward', 'dones', 'role_features']
         policy = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
         init_flag = False
+        current_eps = Args.train_params.initial_eps
         rolltime_count = 0
         # sampling ..
         while True:
             # update model params periodly
             if not actor_queue.empty():
                 data = actor_queue.get()
+                current_eps = data.pop('current_eps', current_eps)
                 policy.sync_actor(data)
                 init_flag = True
             # first time initialization
@@ -59,7 +61,7 @@ def actor_worker(
                 count_agentself_total = [0, 0, 0]
                 for t in range(max_timesteps):
                     ##探索工作量统计列表
-                    actions = policy.act(obs, explore=True)
+                    actions = policy.act(obs, explore=True, current_eps=current_eps)
                     _, _, reward, next_obs, done, info = env.step(t, actions)
                     escape_rate = info[0].get('escape_rate', 0)
                     count_agentself_total = list(np.add(count_agentself_total, info[0]['step_cover_delta']))
@@ -75,7 +77,7 @@ def actor_worker(
                         'obs': obs,
                         'next_obs': next_obs if t != max_timesteps - 1 else obs,
                         'acts': actions,
-                        'reward': reward,
+                        'reward': np.array(reward, dtype=np.float32).reshape(n_agents, 1),
                         'dones': np.array(done, dtype=np.float32).reshape(n_agents, 1),
                         'role_features': rf_arr,
                     }
@@ -89,7 +91,8 @@ def actor_worker(
                 episode_dict = {key: np.array(mb_store_dict[key]) for key in store_item}
                 data_queue.put(episode_dict, block=True)
             # real_size = self.buffer.check_real_cur_size()
-            logger.info(f'actor {actor_index} send data, current data_queue size is {store_interval * data_queue.qsize()}')
+            if Args.log_actor:
+                logger.info(f'actor {actor_index} send data, current data_queue size is {store_interval * data_queue.qsize()}')
     except KeyboardInterrupt:
         logger.critical(f"interrupt")
     except Exception as e:
