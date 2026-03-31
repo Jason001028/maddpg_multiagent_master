@@ -31,6 +31,7 @@ class Evaluator:
         sum_energy = 0.0
         sum_collision = 0.0
         sum_distance_success = 0.0
+        sum_coverage = 0.0
 
         for _ in range(n_episodes):
             obs = self.env.reset()
@@ -56,6 +57,7 @@ class Evaluator:
                 ep_distance += info0.get('distance_delta', 0.0)
                 ep_steps += 1
 
+                ep_coverage = info0.get('coverage_rate', 0.0)
                 if dones[0]:
                     ep_success = info0.get('is_success', False)
                     break
@@ -63,6 +65,7 @@ class Evaluator:
             sum_reward += ep_reward
             sum_energy += ep_energy
             sum_collision += ep_collision
+            sum_coverage += ep_coverage
 
             if ep_success:
                 n_success += 1
@@ -71,6 +74,7 @@ class Evaluator:
 
         E_success = n_success / n_episodes
         E_reward = sum_reward / n_episodes
+        E_coverage = sum_coverage / n_episodes
         # 防除零：成功数为0时用最大惩罚值
         E_time = sum_time_success / n_success if n_success > 0 else float(self.max_timesteps)
         E_energy = sum_energy / n_episodes
@@ -84,6 +88,7 @@ class Evaluator:
         return {
             'success_rate': E_success,
             'mean_reward': E_reward,
+            'mean_coverage': E_coverage,
             'mean_time': E_time,
             'mean_energy': E_energy,
             'mean_collision': E_collision,
@@ -121,8 +126,9 @@ def evaluate_worker(
             metrics['critic_loss'] = data.get('critic_loss', 0.0)
 
             logger.info(
-                f"eval step={evaluate_step} | "
+                f"epoch={evaluate_step // Args.train_params.evalue_interval} | eval step={evaluate_step} | "
                 f"success={metrics['success_rate']:.3f} | "
+                f"coverage={metrics['mean_coverage']:.3f} | "
                 f"reward={metrics['mean_reward']:.2f} | "
                 f"time={metrics['mean_time']:.1f} | "
                 f"energy={metrics['mean_energy']:.2f} | "

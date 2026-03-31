@@ -40,12 +40,12 @@ def learn(model_path, data_queue, evalue_queue, actor_queues):
         Critic_loss += critic_loss
 
         if step % train_params.update_tar_interval == 0:
-            logger.info(f'cur step: {step}')
+            logger.info(f'epoch: {step // evalue_interval}, cur step: {step}')
 
         if step % evalue_interval == 0:
             Actor_loss /= evalue_interval
             Critic_loss /= evalue_interval
-            logger.info(f'cur step: {step}, actor loss:{Actor_loss:.4f}, critic loss:{Critic_loss:.4f}')
+            logger.info(f'epoch: {step // evalue_interval}, cur step: {step}, actor loss:{Actor_loss:.4f}, critic loss:{Critic_loss:.4f}')
 
             model_params = algo.get_actor_state_dict()
             for queue in actor_queues:
