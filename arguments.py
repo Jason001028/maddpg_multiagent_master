@@ -16,7 +16,7 @@ torch.set_float32_matmul_precision('medium')  # 启用半精度矩阵计算
 # 1. 强制PyTorch为RTX5070（算力8.9）生成适配的CUDA内核
 os.environ["TORCH_CUDA_ARCH_LIST"] = "8.9;8.0;7.5"  # 8.9=RTX5070，向下兼容30/20系
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 锁定第0块显卡（你的RTX5070）
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # 避免异步CUDA错误，方便调试
+#os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # 避免异步CUDA错误，方便调试
 
 # 2. 修复Windows多进程+CUDA的启动问题
 if torch.cuda.is_available():
@@ -35,7 +35,7 @@ class Args:
     clip_range = 200
     action_bound = 1
     demo_length = 25  # 20
-    Use_GUI = True
+    Use_GUI = False
     env_params = edict({    
         'n_agents' :  n_agent,
         'dim_observation' : 36,
