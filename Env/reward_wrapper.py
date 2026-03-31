@@ -1,8 +1,6 @@
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-import math
 import gym
-import numpy as np
 
 
 class MARLRewardWrapper(gym.Wrapper):
@@ -19,83 +17,50 @@ class MARLRewardWrapper(gym.Wrapper):
 
     def step(self, t, actions, obs=None):
         next_obs, _, dones, infos = self.env.step(t, actions)
-        rewards = self._compute_rewards(actions, infos)
+        rewards = self._compute_rewards(infos)
         rewards = self._compute_marginal_contribution_hook(rewards, infos)
         rewards = self._compute_kl_regularization_hook(rewards, infos)
         return obs, actions, rewards, next_obs, dones, infos
 
-    def _compute_rewards(self, actions, infos):
+    def _compute_rewards(self, infos):
         env = self.env
         count_oneclear_total = infos[0]['step_cover_delta']
-        valid_actions_list   = infos[0]['valid_actions']
 
-        rewards = [-0.005] * env.agent_num
-        cita    = [1.0]    * env.agent_num
+        # --- Layer 1: Global shared rewards ---
+        global_r = -0.1  # 连坐时间惩罚
+        global_r += sum(count_oneclear_total) * 0.5  # 全局增量奖励
+        if env.smog_realtime_count <= 0:
+            global_r += 50.0  # 终局巨额奖励
 
-        for i, action in enumerate(actions if not hasattr(actions, 'tolist') else actions.tolist()):
-            if env.agent_cover_count[i] >= env.smog_initial_count * env.agent_task_rate[i]:
-                rewards[i] -= 1
-                cita[i] = 0.1
-            rewards[i] += cita[i] * count_oneclear_total[i]
+        # --- Layer 2 & 3: Per-agent rewards ---
+        rewards = [global_r] * env.agent_num
+        quota = [env.smog_initial_count * env.agent_task_rate[i] for i in range(env.agent_num)]
 
-            valid_actions   = valid_actions_list[i]
-            discrete_action = int(np.argmax(action))
-            if valid_actions[discrete_action] == 0:
-                if env.agent_cover_count[i] < env.agent_task_rate[i] * 200:
-                    rewards[i] -= 15
-            else:
-                next_state  = env.current_state[i]
+        for i in range(env.agent_num):
+            delta = count_oneclear_total[i]
+            # 收益递减配额：配额内高奖励，超出低正奖励
+            in_quota  = max(0, min(delta, quota[i] - env.agent_cover_count[i] + delta))
+            over_quota = max(0, delta - in_quota)
+            rewards[i] += 1.0 * in_quota + 0.2 * over_quota
+
+            next_state = env.current_state[i]
+
+            # 碰撞约束（仅 0、2 号智能体）
+            if i == 0 or i == 2:
                 shorted_dis = min(env.get_distance(next_state, env.current_state[j])
-                                  for j in range(env.agent_num))
-                avoid_rate  = 10
-                if i == 0 or i == 2:
-                    if shorted_dis <= env.safe_dis:
-                        if shorted_dis == 5:
-                            rewards[i] -= 0.05 * avoid_rate
-                        elif shorted_dis == 4:
-                            rewards[i] -= 0.45 * avoid_rate
-                        elif shorted_dis == 3:
-                            rewards[i] -= 0.65 * avoid_rate
-                        elif shorted_dis == 2:
-                            rewards[i] -= 0.85 * avoid_rate
-                        elif shorted_dis <= 1:
-                            rewards[i] -= 1.0  * avoid_rate
-                        else:
-                            rewards[i] += 0.15
+                                  for j in range(env.agent_num) if j != i)
+                if shorted_dis <= env.safe_dis:
+                    penalty = min(1.0, (env.safe_dis - shorted_dis + 1) * 0.2)
+                    rewards[i] -= penalty
 
-                if i == 1:
-                    d0 = env.get_distance(next_state, env.current_state[0])
-                    d2 = env.get_distance(next_state, env.current_state[2])
-                    target_dis = d0 if env.postman_target == 0 else d2
-                    rewards[i] += 3.0 / (target_dis + 1)
-                    if target_dis <= 2:
-                        rewards[i] += 5.0
-                    if d0 > 8 and d2 > 8:
-                        rewards[i] -= 2.0
+            # Postman 角色约束（1 号智能体）
+            if i == 1:
+                d0 = env.get_distance(next_state, env.current_state[0])
+                d2 = env.get_distance(next_state, env.current_state[2])
+                target_dis = d0 if env.postman_target == 0 else d2
+                rewards[i] += 0.5 / (target_dis + 1)
 
-        total_r = ((sum(count_oneclear_total) - count_oneclear_total[1]) * 0.65
-                   - env.smog_realtime_count * 0.1
-                   + (env.smog_initial_count - env.smog_realtime_count) * 0.3)
-
-        escape_rate = infos[0]['escape_rate']
-        if 0.25 < escape_rate < 4:
-            total_r += 10 * math.atan(1 / (escape_rate - 1))
-            if 0.5 < escape_rate < 2:
-                total_r += 10 * math.atan(1 / (escape_rate - 1))
-            if escape_rate == 1:
-                total_r += 20
-        else:
-            if escape_rate > 1:
-                total_r -= 5 * math.atan(escape_rate - 1)
-            elif 0 < escape_rate < 1:
-                total_r -= 5 * math.atan(1 / escape_rate)
-            elif escape_rate == 0:
-                total_r -= 6
-
-        if count_oneclear_total.count(0) == len(count_oneclear_total) and env.smog_realtime_count > 20:
-            total_r -= 5
-
-        return [r + total_r for r in rewards]
+        return rewards
 
     # ------------------------------------------------------------------ #
     # 扩展接口：后续阶段注入

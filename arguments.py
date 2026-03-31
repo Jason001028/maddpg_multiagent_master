@@ -44,7 +44,7 @@ class Args:
         'dim_achieved_goal' :  3,
         'clip_obs' : clip_obs,
         'dim_goal' :  3,
-        'max_timesteps' : 100,  #400→150→100
+        'max_timesteps' : 50,  #400→150→100->50
         'action_max' : 1
         })
     #max_timesteps:200→400
@@ -104,7 +104,7 @@ class Args:
     role_configs = [
         {'task_rate': 0.3, 'viewrange': 1},   # explorer
         {'task_rate': 0.0, 'viewrange': 0},   # postman
-        {'task_rate': 0.7, 'viewrange': 4},   # surveyor
+        {'task_rate': 0.7, 'viewrange': 3},   # surveyor
     ]
 
 

@@ -59,7 +59,7 @@ class Logger(object):
 
 # 评估指标字段顺序（同时作为 CSV 表头）
 _EVAL_FIELDS = ['step', 'actor_loss', 'critic_loss',
-                'success_rate', 'mean_reward', 'mean_time',
+                'success_rate', 'mean_coverage', 'mean_reward', 'mean_time',
                 'mean_energy', 'mean_collision', 'mean_distance', 'fitness']
 
 

@@ -127,7 +127,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         while goal_smog_tmp > 0:
             for x in range(0, self.grid_size):
                 for y in range(0, self.grid_size):
-                    if [x, y] not in self.origin_obstacle_states and (x, y) not in self.goal_state_set and [x, y] not in self.origin_current_state and [x,y] not in self.origin_stable_obstacle_states:
+                    if [x, y] not in self.origin_obstacle_states and (x, y) not in self.goal_state_set and [x,y] not in self.origin_stable_obstacle_states:
                         self.goal_state.append([x, y])
                         self.goal_state_set.add((x, y))
                         self.smog_count += 1
@@ -159,6 +159,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         self.smog_count = self.smog()
         self.smog_realtime_count = self.smog()
         self.smog_initial_count = self.smog_realtime_count
+        self.total_clear = 0
         self.agent_cover_count = [0] * self.agent_num
         self.agent0_cover.clear()
         self.agent1_cover.clear()
@@ -175,13 +176,12 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
             for j in range(self.agent_num):
                 self.last_dis[i] = min(self.last_dis[i], self.get_distance(self.current_state[i], self.goal_state[j]))
         state = [self.get_state(i) for i in range(self.agent_num)]
-        self.clear_smog(i)
         plot_path = 'saved_models'
         # csv_file_name = initialize_cover_csv(plot_path)
         return state
 
-###迷雾消除机制
-#功能：从列表中清除指定迷雾，并返回一个清除数
+    ###迷雾消除机制
+    #功能：从列表中清除指定迷雾，并返回一个清除数
     def clear_smog(self, i):
         my_x, my_y = self.current_state[i]
         # data = np.array(self.goal_state)
@@ -319,12 +319,9 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         is_terminal, is_success_flag = self.get_is_done()
         done = 1 if is_terminal else 0
 
-        # 碰撞检测：当前步执行后，任意两智能体占据相同格子
-        collisions = 0
-        for ii in range(self.agent_num):
-            for jj in range(ii + 1, self.agent_num):
-                if self.current_state[ii] == self.current_state[jj]:
-                    collisions += 1
+        # 碰撞检测：explorer(0)与surveyor(2)相邻（曼哈顿距离≤1）算碰撞，postman不参与
+        s0, s2 = self.current_state[0], self.current_state[2]
+        collisions = 1 if abs(s0[0] - s2[0]) + abs(s0[1] - s2[1]) <= 1 else 0
 
         # 能耗估算：所有智能体动作向量的 L2 范数之和（actions 已被 parse_action 转为离散索引，用原始连续向量不可得；
         # 此处用离散动作的 L2：非静止动作 norm=1，静止=0）
@@ -347,6 +344,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
             'valid_actions': valid_actions_list,
             'prev_states': prev_states,
             'role_features': self.role_features,                   # E_i，供 Actor 角色编码器 f_role 使用
+            'coverage_rate': self.total_clear / self.smog_initial_count if self.smog_initial_count > 0 else 0.0,
             'is_success': bool(is_success_flag),                   # 成功完成（非超时截断）
             'collisions': collisions,                              # 本步碰撞次数
             'energy_cost': energy_cost,                            # 本步能耗估算
@@ -429,17 +427,23 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         #         # pygame.draw.circle(self.window, (111, 25, 230), ((0.5+point[1])*row_size, (0.5+point[0])*col_size), 5, width=1)
         #         pygame.draw.circle(self.window, (111, 25, 230),((0.5 + point[1])*row_size,(0.5+point[0])*col_size),5,width=1)
         # Draw reward and done status
+        self.small_font = pygame.font.Font(None, 20)  
+        TEXT_COLOR = (255, 215, 0)  
+
         for i in range(0,3):
              reward[i]=round(reward[i],2)
         escape_rate = round(escape_rate, 4)
-        reward_text = self.font.render('Reward: {}'.format(reward), True, (0, 0, 0))
-        done_text = self.font.render('Agent_cover: {}'.format(self.agent_cover_count), True, (0, 0, 0))
-        escape_rate_text = self.font.render('escape_rate: {}'.format(escape_rate), True, (0,0,0))
+        reward_text = self.font.render('Reward: {}'.format(reward), True, TEXT_COLOR)
+        done_text = self.font.render('Agent_cover: {}'.format(self.agent_cover_count), True, TEXT_COLOR)
+        escape_rate_text = self.font.render('escape_rate: {}'.format(escape_rate), True, TEXT_COLOR)
 
         # sum_reward_text = self.font.render('Done: {}'.format(sum_reward), True, (0, 0, 0))
-        self.window.blit(reward_text, (10, self.window_size[1]-40))
-        self.window.blit(done_text, (10, self.window_size[1]-70))
-        self.window.blit(escape_rate_text, (10, self.window_size[1]-100))
+        coverage_rate = self.total_clear / self.smog_initial_count if self.smog_initial_count > 0 else 0.0
+        coverage_text = self.font.render('Coverage: {:.2%}'.format(coverage_rate), True, TEXT_COLOR)
+        self.window.blit(reward_text, (6, self.window_size[1]-40))
+        self.window.blit(done_text, (6, self.window_size[1]-60))
+        self.window.blit(escape_rate_text, (6, self.window_size[1]-80))
+        self.window.blit(coverage_text, (6, self.window_size[1]-100))
 
         # self.window.blit(sum_reward_text, (10, self.window_size[1] - 100))
 
