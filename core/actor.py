@@ -66,7 +66,8 @@ def actor_worker(
                     save_fig = info[0] if t == max_timesteps - 1 else None
                     save_fig_path = str(Path(__file__).parent.parent / f'results_png/{Args.algo_name}_epoch{rolltime_count}_actor{actor_index}_demo_{rollouts_times}.png') if save_fig else None
                     #此处包含实时绘制参数
-                    env.render(escape_rate, reward, done, save_fig_path)
+                    if Args.Use_GUI or save_fig_path:
+                        env.render(escape_rate, reward, done, save_fig_path)
                     # role_features: list of dicts → (n_agents, 2) float array
                     rf = info[0].get('role_features', [{'task_rate': 0.0, 'viewrange': 0.0}] * n_agents)
                     rf_arr = np.array([[d['task_rate'], d['viewrange']] for d in rf], dtype=np.float32)

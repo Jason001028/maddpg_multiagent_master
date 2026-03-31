@@ -7,7 +7,9 @@ import random
 import gym
 import os
 import copy
-import sys 
+import sys
+sys.path.append(__import__('pathlib').Path(__file__).parent.parent.resolve().as_posix())
+from arguments import Args
 from easydict import EasyDict as edict
 import csv
 import os
@@ -36,16 +38,20 @@ env_params = edict({
 
 class Gridworld(gym.Env):
     def __init__(self, agent_num = 3, obstacles = None, agent_configs = None):
-        # Initialize pygame
-        pygame.init()
         self.agent_num = agent_num
         self.seed = 10
         self.save_fig_time = 0
-        # Set up window and font
-        self.font = pygame.font.SysFont(None, 30)
         self.window_size = (400, 400)
-        self.window = pygame.display.set_mode(self.window_size)
-        pygame.display.set_caption('Gridworld')
+        # Initialize pygame only when GUI or saving is needed
+        if Args.Use_GUI:
+            pygame.init()
+            self.font = pygame.font.SysFont(None, 30)
+            self.window = pygame.display.set_mode(self.window_size)
+            pygame.display.set_caption('Gridworld')
+        else:
+            pygame.display.init()  # headless, needed for offscreen save
+            self.font = None
+            self.window = None
         self.save_max_num = 10
         #安全距离
         self.safe_dis = 5
@@ -369,6 +375,14 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
 
     ##重新显示并绘制窗口图
     def render(self, escape_rate, reward, done, save_path_name = None):
+        if not Args.Use_GUI and save_path_name is None:
+            return
+        # Lazily create offscreen surface when not using GUI
+        if self.window is None:
+            pygame.display.init()
+            pygame.font.init()
+            self.window = pygame.Surface(self.window_size)
+            self.font = pygame.font.SysFont(None, 30)
         # Clear window
         self.window.fill((200, 200, 200))
         row_size = self.window_size[0] / self.grid_size
@@ -448,7 +462,8 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         # self.window.blit(sum_reward_text, (10, self.window_size[1] - 100))
 
         # Update display
-        pygame.display.update()
+        if Args.Use_GUI:
+            pygame.display.update()
         if save_path_name is not None:
             os.makedirs(os.path.dirname(save_path_name), exist_ok=True)
             # 使用 PIL 绕过 pygame 对中文路径的支持问题
