@@ -31,7 +31,7 @@ def load_obstacle_states():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algo', type=str, default=None, choices=['qmix', 'vdn', 'legacy_maddpg'])
+    parser.add_argument('--algo', type=str, default=None, choices=['qmix', 'vdn', 'legacy_maddpg', 'iql'])
     parser.add_argument('--epochs', type=int, default=None)
     cli = parser.parse_args()
 
