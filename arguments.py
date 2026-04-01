@@ -33,7 +33,6 @@ class Args:
     clip_obs = 5
     actor_num = 6 #actor数量,9700X是8核cpu 1 个核心：专门留给 Learner 进程 1 个核心：留给 Evaluator（评估进程）
     clip_range = 200
-    action_bound = 1
     demo_length = 25  # 20
     Use_GUI = False
     log_actor = False  # 是否输出actor发送数据的日志（True=输出，False=屏蔽）
@@ -46,7 +45,6 @@ class Args:
         'clip_obs' : clip_obs,
         'dim_goal' :  3,
         'max_timesteps' : 50,  #400→150→100->50
-        'action_max' : 1
         })
     #max_timesteps:200→400
 
@@ -58,6 +56,7 @@ class Args:
     # 'legacy_maddpg' — 共享参数的单网络 MADDPG，全局 Critic 拼接所有智能体观测/动作，适合同构基线对比
     # 'vdn'           — 异构 VDN，每个智能体独立 Actor+LocalCritic，Q_tot=ΣQ_i，当前主实验算法
     # 'qmix'          — 异构 QMIX，独立Actor+局部Critic+单调混合网络，非线性融合局部Q值，复杂协作任务精度优于VDN
+    # 'iql'           — 完全独立 Q-Learning，无协作机制，无协作基线
     algo_name = 'qmix'
 
     train_params = edict({
@@ -73,7 +72,6 @@ class Args:
         'date' : date,
         'checkpoint' : None,
         'polyak' : 0.995,  # 软更新率 指代每次保留 99.5% 的旧权重
-        'action_l2' : 0.05, #  动作幅度惩罚（0.5有点高）  actor_loss += self.args.action_l2 * (acts_real_tensor / self.env_params['action_max']).pow(2).mean()
         'initial_eps' : 1.0,
         'final_eps'   : 0.05,
         'theta' : 0.1, # GAIL reward weight

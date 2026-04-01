@@ -33,7 +33,7 @@ class actor(nn.Module):
     def forward(self, obs_and_g):
         result = self.RELU(self.FC1(obs_and_g))
         result = self.RELU(self.FC2(result))
-        actions = F.softmax(self.action_out(result), dim=-1)  # hand_logits 为末端状态选择的概率 3维
+        actions = self.action_out(result)  # raw logits
         return actions
 
 class Net():
@@ -86,7 +86,20 @@ class ActorNetwork(nn.Module):
         )
 
     def forward(self, obs_i):
-        return th.sigmoid(self.net(obs_i))  # 连续动作，各维度独立映射到 (0,1)
+        return self.net(obs_i)  # raw logits
+
+
+class DiscreteActorNetwork(nn.Module):
+    def __init__(self, dim_obs, dim_act):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim_obs, 256), nn.ReLU(),
+            nn.Linear(256, 256),     nn.ReLU(),
+            nn.Linear(256, dim_act)
+        )
+
+    def forward(self, obs_i):
+        return self.net(obs_i)  # raw logits，由调用方决定如何使用
 
 
 class VDNNet(nn.Module):
@@ -152,13 +165,74 @@ class QMIXNet(nn.Module):
         dim_act  = env_params.dim_action
         state_dim = self.n_agents * dim_obs
 
-        self.actors  = nn.ModuleList([ActorNetwork(dim_obs, dim_act) for _ in range(self.n_agents)])
+        self.actors  = nn.ModuleList([DiscreteActorNetwork(dim_obs, dim_act) for _ in range(self.n_agents)])
         self.critics = nn.ModuleList([LocalCritic(dim_obs, dim_act)  for _ in range(self.n_agents)])
         self.mixer   = QMixer(self.n_agents, state_dim, embed_dim)
 
         self.actors_target  = deepcopy(self.actors)
         self.critics_target = deepcopy(self.critics)
         self.mixer_target   = deepcopy(self.mixer)
+
+        self.to(device)
+
+    def update(self, model):
+        for a, src in zip(self.actors, model.actors):
+            a.load_state_dict(src.state_dict())
+
+
+# ── IQL 所需网络组件 ──────────────────────────────────────────────────────────
+
+class IQLNet(nn.Module):
+    """n_agents 个完全独立的 Actor + LocalCritic，无任何协作机制"""
+    def __init__(self, env_params, device='cpu'):
+        super().__init__()
+        self.n_agents = env_params.n_agents
+        dim_obs = env_params.dim_observation
+        dim_act = env_params.dim_action
+
+        self.actors  = nn.ModuleList([ActorNetwork(dim_obs, dim_act) for _ in range(self.n_agents)])
+        self.critics = nn.ModuleList([LocalCritic(dim_obs, dim_act)  for _ in range(self.n_agents)])
+
+        self.actors_target  = deepcopy(self.actors)
+        self.critics_target = deepcopy(self.critics)
+
+        self.to(device)
+
+    def update(self, model):
+        for a, src in zip(self.actors, model.actors):
+            a.load_state_dict(src.state_dict())
+
+
+# ── MADDPG 所需网络组件 ───────────────────────────────────────────────────────
+
+class CentralizedCritic(nn.Module):
+    """中心化 Critic：输入全局 obs + 所有智能体动作，输出 Q_i"""
+    def __init__(self, dim_obs, dim_act, n_agents):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim_obs * n_agents + dim_act * n_agents, 256), nn.ReLU(),
+            nn.Linear(256, 256), nn.ReLU(),
+            nn.Linear(256, 1)
+        )
+
+    def forward(self, global_obs, all_acts):
+        # global_obs: (B, dim_obs*n_agents), all_acts: (B, dim_act*n_agents)
+        return self.net(th.cat([global_obs, all_acts], dim=-1))
+
+
+class MADDPGNet(nn.Module):
+    """n_agents 个独立 Actor + 中心化 Critic，CTDE 架构"""
+    def __init__(self, env_params, device='cpu'):
+        super().__init__()
+        self.n_agents = env_params.n_agents
+        dim_obs = env_params.dim_observation
+        dim_act = env_params.dim_action
+
+        self.actors  = nn.ModuleList([ActorNetwork(dim_obs, dim_act) for _ in range(self.n_agents)])
+        self.critics = nn.ModuleList([CentralizedCritic(dim_obs, dim_act, self.n_agents) for _ in range(self.n_agents)])
+
+        self.actors_target  = deepcopy(self.actors)
+        self.critics_target = deepcopy(self.critics)
 
         self.to(device)
 
