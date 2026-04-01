@@ -36,11 +36,8 @@ class LegacyMADDPG(BaseMARLAlgorithm):
         action = self.model.actor(obs_tensor).cpu().numpy()
         if action.ndim == 1:
             action = action[np.newaxis, :]
-        if explore:
-            if random.random() < 0.1:
-                action = np.random.uniform(-1, 1, action.shape)
-            action += self.noise_eps * self.action_max * np.random.randn(*action.shape)
-            action = np.clip(action, -self.action_max, self.action_max)
+        if explore and random.random() < self.noise_eps:
+            action = np.random.rand(*action.shape)
         return np.clip(action, 0, 1)
 
     @staticmethod

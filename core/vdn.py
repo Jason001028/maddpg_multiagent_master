@@ -35,10 +35,9 @@ class ContinuousVDN(BaseMARLAlgorithm):
         actions = torch.stack(
             [self.model.actors[i](obs_t[i]) for i in range(self.n_agents)]
         ).cpu().numpy()  # (n_agents, dim_act)
-        if explore:
-            actions += self.noise_eps * self.action_max * np.random.randn(*actions.shape)
-            actions = np.clip(actions, 0, 1)
-        return actions
+        if explore and np.random.rand() < self.noise_eps:
+            actions = np.random.rand(*actions.shape)
+        return np.clip(actions, 0, 1)
 
     def update(self, transitions, logger, step=0, **kwargs):
         def to_t(key):
