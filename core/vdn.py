@@ -75,6 +75,7 @@ class ContinuousVDN(BaseMARLAlgorithm):
         critic_loss = (target_q - q_tot).pow(2).mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.critics.parameters(), max_norm=1.0)
         self.critic_optimizer.step()
 
         # ---- Actor 更新（冻结 Critic 参数）-------------------------------
@@ -89,6 +90,7 @@ class ContinuousVDN(BaseMARLAlgorithm):
             ).mean()
             self.actor_optimizers[i].zero_grad()
             loss_i.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.actors[i].parameters(), max_norm=1.0)
             self.actor_optimizers[i].step()
             actor_loss_total += loss_i.detach()
 

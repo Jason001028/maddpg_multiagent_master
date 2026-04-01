@@ -82,6 +82,7 @@ class LegacyMADDPG(BaseMARLAlgorithm):
         critic_loss = (target_q - real_q).pow(2).mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.critic.parameters(), max_norm=1.0)
         self.critic_optimizer.step()
 
         acts_real = self.model.actor(obs)
@@ -90,6 +91,7 @@ class LegacyMADDPG(BaseMARLAlgorithm):
             acts_real.reshape(batch, -1).unsqueeze(1).repeat(1, n, 1)).mean()
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.actor.parameters(), max_norm=1.0)
         self.actor_optimizer.step()
 
         if step % self.update_tar_interval == 0:

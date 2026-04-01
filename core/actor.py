@@ -77,7 +77,7 @@ def actor_worker(
                         'obs': obs,
                         'next_obs': next_obs if t != max_timesteps - 1 else obs,
                         'acts': actions,
-                        'reward': np.array(reward, dtype=np.float32).reshape(n_agents, 1),
+                        'reward': np.array(reward, dtype=np.float32).reshape(n_agents, 1) / 100.0,
                         'dones': np.array(done, dtype=np.float32).reshape(n_agents, 1),
                         'role_features': rf_arr,
                     }

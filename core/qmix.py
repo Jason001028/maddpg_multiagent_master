@@ -96,6 +96,8 @@ class ContinuousQMIX(BaseMARLAlgorithm):
         critic_loss = (target_q - q_tot).pow(2).mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(
+            list(self.model.critics.parameters()) + list(self.model.mixer.parameters()), max_norm=1.0)
         self.critic_optimizer.step()
 
         # ---- Actor 更新（FACMAC：梯度流经 Mixer）--------------------------
@@ -113,6 +115,8 @@ class ContinuousQMIX(BaseMARLAlgorithm):
         for opt in self.actor_optimizers:
             opt.zero_grad()
         actor_loss.backward()
+        for i, actor in enumerate(self.model.actors):
+            torch.nn.utils.clip_grad_norm_(actor.parameters(), max_norm=1.0)
         for opt in self.actor_optimizers:
             opt.step()
 

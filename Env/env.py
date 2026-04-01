@@ -64,7 +64,6 @@ class Gridworld(gym.Env):
         # Initialize gridworld
         #视野范围2
         self.viewrange = 2
-        #最早是20，我们缩小至16
         self.grid_size = 16
         self.num_actions = 5
         #行动空间，5自由度
@@ -72,8 +71,25 @@ class Gridworld(gym.Env):
         self.num_states = self.grid_size * self.grid_size
         
         self.origin_obstacle_states = []
-        self.origin_stable_obstacle_states = copy.deepcopy(obstacles)
-        self.goal_state = []
+        self.origin_stable_obstacle_states = copy.deepcopy(obstacles) if obstacles is not None else []
+
+        # ==================== Numpy 向量化数据结构重构 ====================
+        # 1. 障碍物转换为 2D Numpy 布尔掩码矩阵
+        self.obstacle_mask = np.zeros((self.grid_size, self.grid_size), dtype=bool)
+        for obs in self.origin_stable_obstacle_states:
+            if 0 <= obs[0] < self.grid_size and 0 <= obs[1] < self.grid_size:
+                self.obstacle_mask[obs[0], obs[1]] = True
+        for obs in self.origin_obstacle_states:
+            if 0 <= obs[0] < self.grid_size and 0 <= obs[1] < self.grid_size:
+                self.obstacle_mask[obs[0], obs[1]] = True
+
+        # 2. 废弃 goal_state 和 goal_state_set，统一改为 2D Numpy 矩阵 (1 为迷雾, 0 为清晰)
+        self.smog_map = np.zeros((self.grid_size, self.grid_size), dtype=int)
+        
+        # 3. 废弃 agent0/1/2_cover 集合，改用 3D Numpy 矩阵统一管理探索区域
+        # 形状为 [3, 16, 16]，第一维度对应 3 个智能体
+        self.cover_map = np.zeros((3, self.grid_size, self.grid_size), dtype=bool)
+        # =================================================================
 
         ##agent0,1,2: explorer,postman,surveyor
         # 角色特征向量 E_i 由外部注入（arguments.role_configs），禁止在此硬编码
@@ -84,9 +100,6 @@ class Gridworld(gym.Env):
         self.agent_task_viewrange = [c['viewrange'] for c in agent_configs]
 
         self.agent_cover_count = [0] * agent_num
-        self.agent0_cover = set()
-        self.agent1_cover = set()
-        self.agent2_cover = set()
 
         self.agent0_move_count = 0
         self.agent1_move_count = 0
@@ -94,51 +107,46 @@ class Gridworld(gym.Env):
         self.postman_target = 2  # postman 当前要去的目标 agent（0 或 2）
         self.postman_relay_count = 0
 
-        # init obstacle pos
-        # for _ in range(60):
-        #     x = random.randint(1,self.grid_size-1 )
-        #     y = random.randint(1,self.grid_size-1 )
-        #     if [x,y] not in self.origin_obstacle_states and [x,y] not in self.goal_state:
-        #         self.origin_stable_obstacle_states.append([x,y])
         # init agent pos
         origin_pos_tmp = agent_num
         self.origin_current_state = []
         while origin_pos_tmp > 0:
             x = random.randint(1, self.grid_size - 1)
             y = random.randint(1, self.grid_size - 1)
-            if [x, y] not in self.origin_obstacle_states and [x, y] not in self.goal_state and [x,y] not in self.origin_current_state and [x,y] not in self.origin_stable_obstacle_states:
-                self.origin_current_state.append([x,y])
+            # 使用 O(1) 的矩阵索引替代低效的 in list 遍历检查
+            if not self.obstacle_mask[x, y] and [x, y] not in self.origin_current_state:
+                self.origin_current_state.append([x, y])
                 origin_pos_tmp -= 1
-        # init goal pos\
-        self.agent0_cover.add(tuple(self.origin_current_state[0]))
-        self.agent1_cover.add(tuple(self.origin_current_state[1]))
-        self.agent2_cover.add(tuple(self.origin_current_state[2]))
+                
+        # init goal pos (在此处将初始智能体坐标写入各自的覆盖矩阵)
+        self.cover_map[0, self.origin_current_state[0][0], self.origin_current_state[0][1]] = True
+        self.cover_map[1, self.origin_current_state[1][0], self.origin_current_state[1][1]] = True
+        self.cover_map[2, self.origin_current_state[2][0], self.origin_current_state[2][1]] = True
+        
         self.obstacle_movement_prob = 0.05
         self.max_step = 200
 
         # define for RL
-        cp_obs_space = 3 * self.grid_size * self.grid_size + 2 * len(self.goal_state) + 4 + 1 + 2 # map 3 * 20 * 20 + 15
-        # self.observation_space = gym.spaces.Box(low = -1, high=1, shape = (4, self.grid_size, self.grid_size,))
+        # 修改观测空间维度以适应固定的剩余迷雾回传逻辑 (预留 3 个目标点的长度)
+        cp_obs_space = 3 * self.grid_size * self.grid_size + 2 * 3 + 4 + 1 + 2 
         self.observation_space = gym.spaces.Box(low = -1, high=1, shape = (cp_obs_space,))
         self.action_space = [
-gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 0,1 for move, 2,3 for 20 load\unload, 4,5 for 40 load\unload
+            gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num)
         ]
+        
         self.reset()
 
     ##地图迷雾函数
     def smog(self):
-        self.goal_state = []
-        self.goal_state_set = set()
-        self.smog_count = 0
-        goal_smog_tmp = (self.grid_size-1)^2
-        while goal_smog_tmp > 0:
-            for x in range(0, self.grid_size):
-                for y in range(0, self.grid_size):
-                    if [x, y] not in self.origin_obstacle_states and (x, y) not in self.goal_state_set and [x,y] not in self.origin_stable_obstacle_states:
-                        self.goal_state.append([x, y])
-                        self.goal_state_set.add((x, y))
-                        self.smog_count += 1
-                        goal_smog_tmp -= 1
+        # 1. 创建全 1 矩阵代表铺满迷雾
+        self.smog_map = np.ones((self.grid_size, self.grid_size), dtype=int)
+        
+        # 2. 将障碍物掩码（预先在 __init__ 生成好的布尔矩阵）位置置为 0
+        self.smog_map[self.obstacle_mask] = 0
+        
+        # 3. 统计真实的初始迷雾总数
+        self.smog_count = int(np.sum(self.smog_map))
+        
         return self.smog_count
 
     # def sample_goals(self):
@@ -160,72 +168,102 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         self.stable_obstacle_states = copy.deepcopy(self.origin_stable_obstacle_states)
         self.current_state = copy.deepcopy(self.origin_current_state)
         self.obstacle_states = copy.deepcopy(self.origin_obstacle_states)
-        # self.sample_goals()
-        #不生成目标，而是迷雾
-        # #smog_count：剩余迷雾单元格数量
+
+        # 1. 批量清空所有智能体的 3D 覆盖率记录，并重置覆盖计数
+        self.cover_map.fill(False)
+        self.agent_cover_count = [0] * self.agent_num
+        
+        # 将重置后的出生点重新写入各自的覆盖矩阵
+        for i in range(self.agent_num):
+            x, y = self.current_state[i]
+            self.cover_map[i, x, y] = True
+
+        # 2. 生成地图迷雾，修复原代码中连续两次调用 self.smog() 的冗余逻辑
         self.smog_count = self.smog()
-        self.smog_realtime_count = self.smog()
+        self.smog_realtime_count = self.smog_count
         self.smog_initial_count = self.smog_realtime_count
+        
         self.total_clear = 0
         self.milestone_triggered = set()  # 已触发的里程碑集合
-        self.agent_cover_count = [0] * self.agent_num
-        self.agent0_cover.clear()
-        self.agent1_cover.clear()
-        self.agent2_cover.clear()
         self.postman_target = 2
         self.postman_relay_count = 0
-
         self.cur_step = 0
-        #0代表未达到，1代表达到 先暂时全注释掉
-        # self.get_goal = [0] * self.agent_num
-        self.last_dis = [0] * self.agent_num
+
+        # 初始设为无穷大，避免原本初始化为 0 导致 min() 逻辑失效
+        self.last_dis = [float('inf')] * self.agent_num
         self.expect_smog_dis = [2] * self.agent_num
+        
+        # 3. 提取迷雾坐标，安全地计算初始目标距离
+        smog_coords = np.argwhere(self.smog_map == 1)
         for i in range(self.agent_num):
             for j in range(self.agent_num):
-                self.last_dis[i] = min(self.last_dis[i], self.get_distance(self.current_state[i], self.goal_state[j]))
+                if j < len(smog_coords):
+                    goal_pos = smog_coords[j]
+                    self.last_dis[i] = min(self.last_dis[i], self.get_distance(self.current_state[i], goal_pos))
+            
+            # 防御性 fallback：如果地图上初始无迷雾，距离置为 0
+            if self.last_dis[i] == float('inf'):
+                self.last_dis[i] = 0
+
         state = [self.get_state(i) for i in range(self.agent_num)]
-        plot_path = 'saved_models'
-        # csv_file_name = initialize_cover_csv(plot_path)
         return state
 
     ###迷雾消除机制
     #功能：从列表中清除指定迷雾，并返回一个清除数
+    ### 迷雾消除机制
+    # 功能：清除视野内迷雾，计算个人覆盖量，并返回本次清除的迷雾总数
     def clear_smog(self, i):
         my_x, my_y = self.current_state[i]
-        # data = np.array(self.goal_state)
-        # np.delete(data,[my_x, my_y])
-        # self.goal_state=list(data)
-        # print(self.goal_state)
-        count_remove = 0
-        if i == 0:
-            for y in range(my_y - self.agent_task_viewrange[i], my_y + self.agent_task_viewrange[i] + 1):
-                for x in range(my_x - self.agent_task_viewrange[i], my_x + self.agent_task_viewrange[i] + 1):
-                    if (x, y) in self.goal_state_set:
-                        self.goal_state.remove([x, y])
-                        self.goal_state_set.discard((x, y))
-                        if (x, y) not in self.agent2_cover:
-                            self.agent0_cover.add((x, y))
-                            self.agent_cover_count[i] += 1
-                        count_remove = count_remove+1
+        view = self.agent_task_viewrange[i]
+        
+        # 1. 计算切片边界，自动处理边缘截断，防止越界
         if i == 1:
-            if (my_x, my_y) in self.goal_state_set:
-                self.goal_state.remove([my_x, my_y])
-                self.goal_state_set.discard((my_x, my_y))
-                if (my_x, my_y) not in self.agent0_cover and (my_x, my_y) not in self.agent2_cover:
-                    self.agent1_cover.add((my_x, my_y))
-                    self.agent_cover_count[i] += 1
-                count_remove = count_remove + 1
-        if i == 2:
-            for y in range(my_y - self.agent_task_viewrange[i], my_y + self.agent_task_viewrange[i] + 1):
-                for x in range(my_x - self.agent_task_viewrange[i], my_x + self.agent_task_viewrange[i] + 1):
-                    if (x, y) in self.goal_state_set:
-                        self.goal_state.remove([x, y])
-                        self.goal_state_set.discard((x, y))
-                        if (x, y) not in self.agent0_cover and (x, y) not in self.agent1_cover:
-                            self.agent2_cover.add((x, y))
-                            self.agent_cover_count[i] += 1
-                        count_remove = count_remove+1
-
+            # Postman 只能清理自己脚下这一格
+            x_start, x_end = my_x, my_x + 1
+            y_start, y_end = my_y, my_y + 1
+        else:
+            # Explorer 和 Surveyor 按 view 辐射清理
+            x_start = max(0, my_x - view)
+            x_end = min(self.grid_size, my_x + view + 1)
+            y_start = max(0, my_y - view)
+            y_end = min(self.grid_size, my_y + view + 1)
+            
+        # 2. 提取当前视野内的迷雾切片
+        smog_slice = self.smog_map[x_start:x_end, y_start:y_end]
+        
+        # 找出当前切片内“确实存在迷雾”的坐标，形成布尔掩码
+        cleared_mask = (smog_slice == 1)
+        count_remove = int(np.sum(cleared_mask))
+        
+        # 如果视野内有迷雾被清除，则进入个人覆盖率结算逻辑
+        if count_remove > 0:
+            # 获取对应的 Cover_map 切片视图，准备执行多智能体独占逻辑判定
+            c0 = self.cover_map[0, x_start:x_end, y_start:y_end]
+            c1 = self.cover_map[1, x_start:x_end, y_start:y_end]
+            c2 = self.cover_map[2, x_start:x_end, y_start:y_end]
+            
+            # 3. 严格对齐原代码的多智能体覆盖规则
+            if i == 0:
+                # Explorer: 清除的迷雾不能在 Surveyor(2) 的探索区域内
+                valid = cleared_mask & (~c2)
+                self.agent_cover_count[0] += int(np.sum(valid & (~c0)))
+                self.cover_map[0, x_start:x_end, y_start:y_end] |= valid
+                
+            elif i == 1:
+                # Postman: 清除的迷雾不能在 Explorer(0) 和 Surveyor(2) 的探索区域内
+                valid = cleared_mask & (~c0) & (~c2)
+                self.agent_cover_count[1] += int(np.sum(valid & (~c1)))
+                self.cover_map[1, x_start:x_end, y_start:y_end] |= valid
+                
+            elif i == 2:
+                # Surveyor: 清除的迷雾不能在 Explorer(0) 和 Postman(1) 的探索区域内
+                valid = cleared_mask & (~c0) & (~c1)
+                self.agent_cover_count[2] += int(np.sum(valid & (~c2)))
+                self.cover_map[2, x_start:x_end, y_start:y_end] |= valid
+                
+            # 4. 批量将视野内的迷雾状态置为 0 (清除)
+            smog_slice[:] = 0
+            
         return count_remove
 
         # del self.goal_state [my_x,my_y]
@@ -233,23 +271,31 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
 
 
 
-    def get_state(self, i):###获取智能体当前位置，及其观测
+    def get_state(self, i): ### 获取智能体当前位置及其观测
         total_obs = [] 
         total_obs.append(self.cur_step / self.max_step)
+        
         # agent pos
         my_x, my_y = self.current_state[i]
-        total_obs.append(my_x/self.grid_size)
-        total_obs.append(my_y/self.grid_size)
+        total_obs.append(my_x / self.grid_size)
+        total_obs.append(my_y / self.grid_size)
+        
+        # 获取当前所有的剩余迷雾坐标
+        smog_coords = np.argwhere(self.smog_map == 1)
+        
         for j in range(self.agent_num):
             x, y = self.current_state[j]
-            total_obs.append(x/self.grid_size)
-            total_obs.append(y/self.grid_size)
-            if len(self.goal_state) >= 3:
-                goal_x, goal_y = self.goal_state[j]
+            total_obs.append(x / self.grid_size)
+            total_obs.append(y / self.grid_size)
+            
+            # 原逻辑：提取前 3 个迷雾点，不足时用 [8, 8] 填充
+            if len(smog_coords) >= self.agent_num:
+                goal_x, goal_y = smog_coords[j]
             else:
                 goal_x, goal_y = [8, 8]
-            total_obs.append(goal_x/self.grid_size)
-            total_obs.append(goal_y/self.grid_size)
+                
+            total_obs.append(goal_x / self.grid_size)
+            total_obs.append(goal_y / self.grid_size)
             total_obs.append((my_x - goal_x) / self.grid_size)
             total_obs.append((my_y - goal_y) / self.grid_size)
             total_obs.append((my_x - x) / self.grid_size)
@@ -260,9 +306,11 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         agent_id = [0, 0, 0]
         agent_id[i] = 1
         total_obs.extend(agent_id)
-        # is in goal
-        is_in_goal = 1 if tuple(self.current_state[i]) in self.goal_state_set else 0
+        
+        # is in goal (使用 O(1) 矩阵索引替代原 set 的成员检测)
+        is_in_goal = 1 if self.smog_map[my_x, my_y] == 1 else 0
         total_obs.append(is_in_goal)
+        
         return total_obs
     
     def get_availabel_action(self, agent_id):
@@ -376,7 +424,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         rewards = [0] * self.agent_num
         return rewards
 
-    ##重新显示并绘制窗口图
+    ## 重新显示并绘制窗口图
     def render(self, escape_rate, reward, done, save_path_name = None):
         if not Args.Use_GUI and save_path_name is None:
             return
@@ -386,6 +434,7 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
             pygame.font.init()
             self.window = pygame.Surface(self.window_size)
             self.font = pygame.font.SysFont(None, 30)
+            
         # Clear window
         self.window.fill((200, 200, 200))
         row_size = self.window_size[0] / self.grid_size
@@ -399,34 +448,31 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         # Draw obstacles 障碍物
         for obstacle_state in self.origin_stable_obstacle_states:
             color = (0, 0, 0)
-            # if obstacle_state in self.stable_obstacle_states:
-            #     color = (0, 0, 0)
             pygame.draw.rect(self.window, color, (obstacle_state[1]*row_size, obstacle_state[0]*col_size, row_size, col_size))
 
-        # Draw cover 已清除区域
-        for grid1 in self.agent0_cover:
+        # ==================== 渲染逻辑重构点开始 ====================
+        # Draw cover 已清除区域 (通过 np.argwhere 提取矩阵中为 True 的坐标)
+        
+        # Agent 0 (Explorer) - 浅蓝色
+        for x, y in np.argwhere(self.cover_map[0]):
             color = (143, 170, 220)
-            pygame.draw.rect(self.window, color, (grid1[1] * row_size, grid1[0] * col_size, row_size, col_size))
-        for grid2 in self.agent1_cover:
+            pygame.draw.rect(self.window, color, (y * row_size, x * col_size, row_size, col_size))
+            
+        # Agent 1 (Postman) - 浅橙色
+        for x, y in np.argwhere(self.cover_map[1]):
             color = (238, 213, 142)
-            pygame.draw.rect(self.window, color, (grid2[1] * row_size, grid2[0] * col_size, row_size, col_size))
-        for grid3 in self.agent2_cover:
+            pygame.draw.rect(self.window, color, (y * row_size, x * col_size, row_size, col_size))
+            
+        # Agent 2 (Surveyor) - 浅青色
+        for x, y in np.argwhere(self.cover_map[2]):
             color = (142, 215, 238)
-            pygame.draw.rect(self.window, color, (grid3[1] * row_size, grid3[0] * col_size, row_size, col_size))
+            pygame.draw.rect(self.window, color, (y * row_size, x * col_size, row_size, col_size))
 
-        # Draw smog 地图迷雾
-        for goal in self.goal_state:
+        # Draw smog 地图迷雾 (提取 smog_map 中值为 1 的坐标)
+        for x, y in np.argwhere(self.smog_map == 1):
             color = (112, 102, 104)
-            # if self.get_goal[self.goal_state.index(goal)] == 0:
-            #     color = (0, 255, 0)
-            pygame.draw.rect(self.window, color, (goal[1]*row_size, goal[0]*col_size, row_size, col_size))
-
-        # # Draw goal state 目标地点
-        # for goal in self.goal_state:
-        #     color = (255, 0, 0)
-        #     # if self.get_goal[self.goal_state.index(goal)] == 0:
-        #     #     color = (0, 255, 0)
-        #     pygame.draw.rect(self.window, color, (goal[1]*row_size, goal[0]*col_size, row_size, col_size))
+            pygame.draw.rect(self.window, color, (y * row_size, x * col_size, row_size, col_size))
+        # ==================== 渲染逻辑重构点结束 ====================
 
         # Draw agent 按照异构智能体分配
         for i in range(self.agent_num):
@@ -438,11 +484,6 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
             if i == 2:
                  pygame.draw.rect(self.window, (28, 149, 188), (y*row_size, x*col_size, row_size, col_size)) #青：surveyor
 
-        # # Draw trajectory绘制轨迹  建议注释
-        # for agent_traj in self.trajectory:
-        #     for point in agent_traj:
-        #         # pygame.draw.circle(self.window, (111, 25, 230), ((0.5+point[1])*row_size, (0.5+point[0])*col_size), 5, width=1)
-        #         pygame.draw.circle(self.window, (111, 25, 230),((0.5 + point[1])*row_size,(0.5+point[0])*col_size),5,width=1)
         # Draw reward and done status
         self.small_font = pygame.font.Font(None, 20)  
         TEXT_COLOR = (255, 215, 0)  
@@ -450,23 +491,24 @@ gym.spaces.Box(low = -1, high=1, shape = (1,)) for _ in range(self.agent_num) # 
         for i in range(0,3):
              reward[i]=round(reward[i],2)
         escape_rate = round(escape_rate, 4)
+        
+        # 兼容文本显示
         reward_text = self.font.render('Reward: {}'.format(reward), True, TEXT_COLOR)
         done_text = self.font.render('Agent_cover: {}'.format(self.agent_cover_count), True, TEXT_COLOR)
         escape_rate_text = self.font.render('escape_rate: {}'.format(escape_rate), True, TEXT_COLOR)
 
-        # sum_reward_text = self.font.render('Done: {}'.format(sum_reward), True, (0, 0, 0))
         coverage_rate = self.total_clear / self.smog_initial_count if self.smog_initial_count > 0 else 0.0
         coverage_text = self.font.render('Coverage: {:.2%}'.format(coverage_rate), True, TEXT_COLOR)
+        
         self.window.blit(reward_text, (6, self.window_size[1]-40))
         self.window.blit(done_text, (6, self.window_size[1]-60))
         self.window.blit(escape_rate_text, (6, self.window_size[1]-80))
         self.window.blit(coverage_text, (6, self.window_size[1]-100))
 
-        # self.window.blit(sum_reward_text, (10, self.window_size[1] - 100))
-
         # Update display
         if Args.Use_GUI:
             pygame.display.update()
+            
         if save_path_name is not None:
             os.makedirs(os.path.dirname(save_path_name), exist_ok=True)
             # 使用 PIL 绕过 pygame 对中文路径的支持问题

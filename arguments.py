@@ -31,7 +31,7 @@ class Args:
     seed = 125  # 123
     n_agent = 3#智能体数量
     clip_obs = 5
-    actor_num = 12#actor数量
+    actor_num = 6 #actor数量,9700X是8核cpu 1 个核心：专门留给 Learner 进程 1 个核心：留给 Evaluator（评估进程）
     clip_range = 200
     action_bound = 1
     demo_length = 25  # 20
@@ -72,7 +72,7 @@ class Args:
         'actor_num' : actor_num,
         'date' : date,
         'checkpoint' : None,
-        'polyak' : 0.96,  # 软更新率
+        'polyak' : 0.995,  # 软更新率 指代每次保留 99.5% 的旧权重
         'action_l2' : 0.05, #  动作幅度惩罚（0.5有点高）  actor_loss += self.args.action_l2 * (acts_real_tensor / self.env_params['action_max']).pow(2).mean()
         'initial_eps' : 1.0,
         'final_eps'   : 0.05,
