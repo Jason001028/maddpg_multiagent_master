@@ -26,48 +26,35 @@ class ReplayBuffer(BaseBuffer):
         self.device = train_params.device
         self.size = int(train_params.buffer_size // self.T)
         n = env_params.n_agents
+        # store on CPU as contiguous numpy arrays for fast batch indexing
         self.specs = dict(
-            obs=dict(size=(self.T, n, env_params.dim_observation), dtype=torch.float32),
-            acts=dict(size=(self.T, n * env_params.dim_action), dtype=torch.float32),
-            next_obs=dict(size=(self.T, n, env_params.dim_observation), dtype=torch.float32),
-            reward=dict(size=(self.T, n, 1), dtype=torch.float32),
-            dones=dict(size=(self.T, n, 1), dtype=torch.float32),
-            role_features=dict(size=(self.T, n, _ROLE_FEAT_DIM), dtype=torch.float32),
+            obs=(self.size, self.T, n, env_params.dim_observation),
+            acts=(self.size, self.T, n, env_params.dim_action),
+            next_obs=(self.size, self.T, n, env_params.dim_observation),
+            reward=(self.size, self.T, n, 1),
+            dones=(self.size, self.T, n, 1),
+            role_features=(self.size, self.T, n, _ROLE_FEAT_DIM),
         )
-        self.buffers = {key: [] for key in self.specs}
-        for _ in range(self.size):
-            for key in self.specs:
-                self.buffers[key].append(torch.zeros(**self.specs[key]).to(self.device))
+        self.buffers = {key: np.zeros(shape, dtype=np.float32) for key, shape in self.specs.items()}
         self.current_size = 0
         self.demo_length = 0
         if logger:
             logger.info(f'ReplayBuffer created: T={self.T}, size={self.size}')
 
     def push(self, episode_batch):
-        """
-        episode_batch: dict with keys obs, acts, next_obs, reward, dones, role_features
-                       each value is np.array of shape (batch_episodes, T, ...)
-        """
         batch_size = episode_batch['obs'].shape[0]
         idxs = self._get_storage_idx(inc=batch_size)
         for key in self.specs:
-            arr = episode_batch[key]
-            for i, idx in enumerate(idxs):
-                self.buffers[key][idx] = torch.tensor(
-                    arr[i], dtype=self.specs[key]['dtype']
-                ).to(self.device)
+            self.buffers[key][idxs] = episode_batch[key]
 
     def sample(self, batch_size):
-        valid = {key: self.buffers[key][:self.current_size] for key in self.buffers}
         ep_idxs = np.random.randint(0, self.current_size, batch_size)
         t_idxs = np.random.randint(self.T, size=batch_size)
         transitions = {
-            key: torch.stack([valid[key][ep][t].to('cpu') for ep, t in zip(ep_idxs, t_idxs)])
-            for key in valid
+            key: torch.from_numpy(self.buffers[key][ep_idxs, t_idxs]).to(self.device)
+            for key in self.specs
         }
-        transitions = {k: v.reshape(batch_size, *v.shape[1:]) for k, v in transitions.items()}
-        transitions['reward'] = transitions['reward'].detach().clone().to(self.specs['reward']['dtype'])
-        return {k: v.to(self.device) for k, v in transitions.items()}
+        return transitions
 
     def clear(self):
         self.current_size = 0

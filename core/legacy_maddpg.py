@@ -36,11 +36,8 @@ class LegacyMADDPG(BaseMARLAlgorithm):
         action = self.model.actor(obs_tensor).cpu().numpy()
         if action.ndim == 1:
             action = action[np.newaxis, :]
-        if explore:
-            if random.random() < 0.1:
-                action = np.random.uniform(-1, 1, action.shape)
-            action += self.noise_eps * self.action_max * np.random.randn(*action.shape)
-            action = np.clip(action, -self.action_max, self.action_max)
+        if explore and random.random() < self.noise_eps:
+            action = np.random.rand(*action.shape)
         return np.clip(action, 0, 1)
 
     @staticmethod
@@ -82,6 +79,7 @@ class LegacyMADDPG(BaseMARLAlgorithm):
         critic_loss = (target_q - real_q).pow(2).mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.critic.parameters(), max_norm=1.0)
         self.critic_optimizer.step()
 
         acts_real = self.model.actor(obs)
@@ -90,6 +88,7 @@ class LegacyMADDPG(BaseMARLAlgorithm):
             acts_real.reshape(batch, -1).unsqueeze(1).repeat(1, n, 1)).mean()
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.actor.parameters(), max_norm=1.0)
         self.actor_optimizer.step()
 
         if step % self.update_tar_interval == 0:

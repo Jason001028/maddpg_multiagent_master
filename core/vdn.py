@@ -35,10 +35,9 @@ class ContinuousVDN(BaseMARLAlgorithm):
         actions = torch.stack(
             [self.model.actors[i](obs_t[i]) for i in range(self.n_agents)]
         ).cpu().numpy()  # (n_agents, dim_act)
-        if explore:
-            actions += self.noise_eps * self.action_max * np.random.randn(*actions.shape)
-            actions = np.clip(actions, 0, 1)
-        return actions
+        if explore and np.random.rand() < self.noise_eps:
+            actions = np.random.rand(*actions.shape)
+        return np.clip(actions, 0, 1)
 
     def update(self, transitions, logger, step=0, **kwargs):
         def to_t(key):
@@ -75,6 +74,7 @@ class ContinuousVDN(BaseMARLAlgorithm):
         critic_loss = (target_q - q_tot).pow(2).mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.critics.parameters(), max_norm=1.0)
         self.critic_optimizer.step()
 
         # ---- Actor 更新（冻结 Critic 参数）-------------------------------
@@ -89,6 +89,7 @@ class ContinuousVDN(BaseMARLAlgorithm):
             ).mean()
             self.actor_optimizers[i].zero_grad()
             loss_i.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.actors[i].parameters(), max_norm=1.0)
             self.actor_optimizers[i].step()
             actor_loss_total += loss_i.detach()
 

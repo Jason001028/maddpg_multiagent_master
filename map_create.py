@@ -14,7 +14,8 @@ matrix = np.zeros((16, 16), dtype=int)  # 固定 16 行，不会少行
 x_count = [0] * 16  # 统计每列（x）的障碍物数量
 
 for x, y in obstacles:
-    if 0 <= x < 16:  # 确保 x 在 0~15 范围内
+    # 【核心修改点】：同时确保 x 和 y 都在 0~15 范围内，彻底过滤掉越界坐标
+    if 0 <= x < 16 and 0 <= y < 16:  
         row = x_count[x]
         if row < 16:  # 确保行不超出 16 行
             matrix[row][x] = y         

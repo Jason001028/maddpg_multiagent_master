@@ -17,7 +17,6 @@ class ContinuousQMIX(BaseMARLAlgorithm):
         self.gamma        = self.train_params.gamma
         self.polyak       = self.train_params.polyak
         self.update_tar_interval = self.train_params.update_tar_interval
-        self.noise_eps    = self.train_params.noise_eps
         self.action_max   = env_params.action_max
 
         embed_dim = getattr(args.train_params, 'mixer_embed_dim', 32)
@@ -31,15 +30,32 @@ class ContinuousQMIX(BaseMARLAlgorithm):
         self.critic_optimizer = Adam(critic_params, lr=self.train_params.lr_critic)
 
     @torch.no_grad()
-    def act(self, obs, explore=True):
+    def act(self, obs, explore=True, current_eps=0.05, available_actions=None):
         obs_t = torch.tensor(np.array(obs), dtype=torch.float32).to(self.device)
-        actions = torch.stack(
-            [self.model.actors[i](obs_t[i]) for i in range(self.n_agents)]
-        ).cpu().numpy()
-        if explore:
-            actions += self.noise_eps * self.action_max * np.random.randn(*actions.shape)
-            actions = np.clip(actions, 0, 1)
-        return actions
+        if explore and np.random.rand() < current_eps:
+            # random exploration, respecting action mask if provided
+            if available_actions is not None:
+                actions = np.array([
+                    np.random.choice(np.where(available_actions[i] == 1)[0])
+                    for i in range(self.n_agents)
+                ])
+            else:
+                actions = np.random.randint(0, self.env_params.dim_action, size=self.n_agents)
+            # one-hot encode
+            one_hot = np.zeros((self.n_agents, self.env_params.dim_action), dtype=np.float32)
+            one_hot[np.arange(self.n_agents), actions] = 1.0
+            return one_hot
+        else:
+            # greedy: actor outputs logits/Q-values, argmax
+            logits = torch.stack(
+                [self.model.actors[i](obs_t[i]) for i in range(self.n_agents)]
+            ).cpu().numpy()  # (n_agents, dim_action)
+            if available_actions is not None:
+                logits[available_actions == 0] = -np.inf
+            actions = np.argmax(logits, axis=-1)
+            one_hot = np.zeros_like(logits)
+            one_hot[np.arange(self.n_agents), actions] = 1.0
+            return one_hot
 
     def update(self, transitions, logger, step=0, **kwargs):
         def to_t(key):
@@ -80,6 +96,8 @@ class ContinuousQMIX(BaseMARLAlgorithm):
         critic_loss = (target_q - q_tot).pow(2).mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(
+            list(self.model.critics.parameters()) + list(self.model.mixer.parameters()), max_norm=1.0)
         self.critic_optimizer.step()
 
         # ---- Actor 更新（FACMAC：梯度流经 Mixer）--------------------------
@@ -97,6 +115,8 @@ class ContinuousQMIX(BaseMARLAlgorithm):
         for opt in self.actor_optimizers:
             opt.zero_grad()
         actor_loss.backward()
+        for i, actor in enumerate(self.model.actors):
+            torch.nn.utils.clip_grad_norm_(actor.parameters(), max_norm=1.0)
         for opt in self.actor_optimizers:
             opt.step()
 
