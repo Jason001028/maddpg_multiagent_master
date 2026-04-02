@@ -1,4 +1,4 @@
-from core.legacy_maddpg import LegacyMADDPG
+from core.legacy_maddpg import DiscreteMADDPG as LegacyMADDPG
 from core.vdn import ContinuousVDN
 from core.qmix import ContinuousQMIX
 from core.iql import IQL

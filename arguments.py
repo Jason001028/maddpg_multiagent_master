@@ -44,7 +44,8 @@ class Args:
         'dim_achieved_goal' :  3,
         'clip_obs' : clip_obs,
         'dim_goal' :  3,
-        'max_timesteps' : 50,  #400→150→100->50
+        'max_timesteps' : 75,  #400→150→100->50->75
+        'action_max'    : 1,
         })
     #max_timesteps:200→400
 
@@ -63,7 +64,7 @@ class Args:
         # params for multipross
         #1e7 → 2e5
         #'learner_step' : int(1e5),
-        'learner_step' : int(48000),#200epoch
+        'learner_step' : int(36000),#150epoch
         'update_tar_interval' : 40,
         'evalue_interval' : 240,
         'evalue_time' : 5,  # evaluation num per epoch
@@ -73,7 +74,7 @@ class Args:
         'checkpoint' : None,
         'polyak' : 0.995,  # 软更新率 指代每次保留 99.5% 的旧权重
         'initial_eps' : 1.0,
-        'final_eps'   : 0.05,
+        'final_eps'   : 0.15,
         'theta' : 0.1, # GAIL reward weight
         'Is_train_discrim': True,
         'roll_time' : 4,
@@ -97,14 +98,14 @@ class Args:
     })
 
     train_params.update(env_params)
-    train_params['decay_steps'] = int(train_params.learner_step * 0.5) #衰减跨度：50%learning_step
+    train_params['decay_steps'] = int(train_params.learner_step * 0.6) #衰减跨度：70%learning_step
 
     # 异构体角色特征向量 E_i：task_rate 决定任务量上限，viewrange 决定迷雾清除半径
     # 顺序对应 agent 0（explorer）、1（postman）、2（surveyor）
     role_configs = [
-        {'task_rate': 0.3, 'viewrange': 2},   # explorer
+        {'task_rate': 0.34, 'viewrange': 2},   # explorer
         {'task_rate': 0.0, 'viewrange': 0},   # postman
-        {'task_rate': 0.7, 'viewrange': 3},   # surveyor
+        {'task_rate': 0.66, 'viewrange': 3},   # surveyor
     ]
 
 
