@@ -35,6 +35,7 @@ class Args:
     clip_range = 200
     demo_length = 25  # 20
     Use_GUI = False
+    Save_PNG = False  # 是否保存 results_png 截图（False=禁用，节省磁盘空间）
     log_actor = False  # 是否输出actor发送数据的日志（True=输出，False=屏蔽）
     env_params = edict({    
         'n_agents' :  n_agent,
@@ -72,7 +73,7 @@ class Args:
         'actor_num' : actor_num,
         'date' : date,
         'checkpoint' : None,
-        'polyak' : 0.995,  # 软更新率 指代每次保留 99.5% 的旧权重
+        'polyak' : 0.95,  # 软更新率 指代每次保留 95% 的旧权重
         'initial_eps' : 1.0,
         'final_eps'   : 0.15,
         'theta' : 0.1, # GAIL reward weight

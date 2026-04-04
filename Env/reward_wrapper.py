@@ -64,12 +64,20 @@ class MARLRewardWrapper(gym.Wrapper):
                     penalty = min(1.0, (env.safe_dis - shorted_dis + 1) * 0.2)
                     rewards[i] -= penalty
 
-            # Postman 角色约束（1 号智能体）
+            # Postman 角色约束（1 号智能体）：势函数塑形 + 中继完成奖励
             if i == 1:
-                d0 = env.get_distance(next_state, env.current_state[0])
-                d2 = env.get_distance(next_state, env.current_state[2])
-                target_dis = d0 if env.postman_target == 0 else d2
-                rewards[i] += 0.5 / (target_dis + 1)
+                target = env.postman_target
+                target_pos = env.current_state[target]
+                prev_pos = infos[0]['prev_states'][1]
+                d_now  = env.get_distance(next_state, target_pos)
+                d_prev = env.get_distance(prev_pos,   target_pos)
+                # 势函数塑形：靠近目标得正奖励，远离得负奖励
+                rewards[i] += 0.5 * (d_prev - d_now)
+                # 中继完成：到达目标附近，给奖励并切换目标
+                if d_now <= 2:
+                    rewards[i] += 3.0
+                    env.postman_relay_count += 1
+                    env.postman_target = 2 if target == 0 else 0
 
         return rewards
 

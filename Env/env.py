@@ -324,6 +324,23 @@ class Gridworld(gym.Env):
                 if new_x == self.current_state[j][0] and new_y == self.current_state[j][1]:
                     available_action[i] = 0
         available_action[0] = 1
+
+        # Safety Shielding：postman 不能同时远离 explorer(0) 和 surveyor(2)（通信图断裂）
+        if agent_id == 1:
+            R = 8  # 通信半径阈值
+            for i, direc in enumerate(direction):
+                if available_action[i] == 0:
+                    continue
+                nx = self.current_state[1][0] + direc[0]
+                ny = self.current_state[1][1] + direc[1]
+                d0 = self.get_distance([nx, ny], self.current_state[0])
+                d2 = self.get_distance([nx, ny], self.current_state[2])
+                if d0 > R and d2 > R:
+                    available_action[i] = 0
+            # 若所有动作均被屏蔽，保留 stay(0) 作为兜底
+            if not any(available_action):
+                available_action[0] = 1
+
         return available_action
     
     def savefig(self, name):

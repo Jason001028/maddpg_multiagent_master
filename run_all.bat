@@ -1,5 +1,5 @@
 @echo off
-set EPOCHS=200
+set EPOCHS=150
 
 echo [1/4] Running qmix for %EPOCHS% epochs...
 python train.py --algo qmix --epochs %EPOCHS%
