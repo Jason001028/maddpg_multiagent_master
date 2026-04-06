@@ -17,25 +17,39 @@ class MARLRewardWrapper(gym.Wrapper):
 
     def step(self, t, actions, obs=None):
         next_obs, _, dones, infos = self.env.step(t, actions)
-        rewards = self._compute_rewards(infos)
+        rewards, global_r, step_penalty = self._compute_rewards(infos)
         rewards = self._compute_marginal_contribution_hook(rewards, infos)
         rewards = self._compute_kl_regularization_hook(rewards, infos)
+        # 注入奖励分解指标，供 Evaluator 采集
+        infos[0]['global_reward']               = global_r
+        infos[0]['explorer_individual_reward']  = rewards[0] - global_r
+        infos[0]['postman_individual_reward']   = rewards[1] - global_r
+        infos[0]['surveyor_individual_reward']  = rewards[2] - global_r
+        infos[0]['constraint_penalty']          = step_penalty
         return obs, actions, rewards, next_obs, dones, infos
 
     def _compute_rewards(self, infos):
+        """返回 (rewards, global_r, step_penalty)。
+
+        - rewards        : 各 agent 最终奖励列表
+        - global_r       : 本步全局共享奖励（探索增量 + 时间惩罚 + 里程碑）
+        - step_penalty   : 本步因碰撞约束实际扣减的惩罚金额总和
+        """
         env = self.env
         count_oneclear_total = infos[0]['step_cover_delta']
 
         # --- Layer 1: Global shared rewards ---
         global_r = -0.1  # 连坐时间惩罚
-        global_r += sum(count_oneclear_total) * 0.5  # 全局增量奖励
+        global_r += sum(count_oneclear_total) * 1.50  # 全局增量奖励，0.5有点低，调到1.5
 
         # 里程碑奖励（25% / 50% / 75% / 80% / 90% / 100%）
         # 80%是成功门槛，90%/100%鼓励更高完成度
         if env.smog_initial_count > 0:
             coverage = env.total_clear / env.smog_initial_count
-            for threshold, bonus in ((0.25, 20.0), (0.50, 40.0), (0.75, 60.0),
-                                     (0.80, 80.0), (0.90, 30.0), (1.00, 50.0)):
+            for threshold, bonus in ((0.20, 20.0), (0.30, 40.0), (0.40, 40.0),
+                                     (0.50, 50.0), (0.60, 50.0), (0.70, 60.0),
+                                     (0.75, 100.0), (0.80, 100.0), (0.90, 200.0),
+                                     (0.95, 400.0),(1.00, 4000.0)):
                 if coverage >= threshold and threshold not in env.milestone_triggered:
                     env.milestone_triggered.add(threshold)
                     global_r += bonus
@@ -46,13 +60,14 @@ class MARLRewardWrapper(gym.Wrapper):
         # --- Layer 2 & 3: Per-agent rewards ---
         rewards = [global_r] * env.agent_num
         quota = [env.smog_initial_count * env.agent_task_rate[i] for i in range(env.agent_num)]
+        step_penalty = 0.0
 
         for i in range(env.agent_num):
             delta = count_oneclear_total[i]
-            # 收益递减配额：配额内高奖励，超出低正奖励
+            # 收益递减配额：配额内高奖励，超出低正奖励 0.1->0.5
             in_quota  = max(0, min(delta, quota[i] - env.agent_cover_count[i] + delta))
             over_quota = max(0, delta - in_quota)
-            rewards[i] += 1.0 * in_quota + 0.2 * over_quota
+            rewards[i] += 1.0 * in_quota + 0.5 * over_quota
 
             next_state = env.current_state[i]
 
@@ -63,6 +78,7 @@ class MARLRewardWrapper(gym.Wrapper):
                 if shorted_dis <= env.safe_dis:
                     penalty = min(1.0, (env.safe_dis - shorted_dis + 1) * 0.2)
                     rewards[i] -= penalty
+                    step_penalty += penalty
 
             # Postman 角色约束（1 号智能体）：势函数塑形 + 中继完成奖励
             if i == 1:
@@ -79,7 +95,7 @@ class MARLRewardWrapper(gym.Wrapper):
                     env.postman_relay_count += 1
                     env.postman_target = 2 if target == 0 else 0
 
-        return rewards
+        return rewards, global_r, step_penalty
 
     # ------------------------------------------------------------------ #
     # 扩展接口：后续阶段注入

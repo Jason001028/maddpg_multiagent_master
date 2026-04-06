@@ -102,7 +102,7 @@ class DiscreteMADDPG(BaseMARLAlgorithm):
             critic_loss_total = critic_loss_total + loss_i
 
         critic_loss_total.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.critics.parameters(), max_norm=1.0)
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(self.model.critics.parameters(), max_norm=1.0).item()
         self.critic_optimizer.step()
 
         # ---- Actor 更新（Gumbel-Softmax，冻结 Critic）--------------------
@@ -110,8 +110,16 @@ class DiscreteMADDPG(BaseMARLAlgorithm):
             p.requires_grad_(False)
 
         actor_loss_total = 0.0
+        actor_grad_norms = []
+        entropies = []
         for i in range(self.n_agents):
             logits_i = self.model.actors[i](obs[:, i, :])
+            # 策略熵：从原始 logits 的 softmax 分布计算，不参与梯度图
+            with torch.no_grad():
+                probs_i   = F.softmax(logits_i.detach(), dim=-1)
+                entropy_i = -(probs_i * torch.log(probs_i + 1e-8)).sum(dim=-1).mean().item()
+            entropies.append(entropy_i)
+
             # Gumbel-Softmax: differentiable one-hot approximation
             soft_one_hot_i = F.gumbel_softmax(logits_i, tau=1.0, hard=True)
 
@@ -129,7 +137,8 @@ class DiscreteMADDPG(BaseMARLAlgorithm):
 
             self.actor_optimizers[i].zero_grad()
             loss_i.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.actors[i].parameters(), max_norm=1.0)
+            actor_grad_norm_i = torch.nn.utils.clip_grad_norm_(self.model.actors[i].parameters(), max_norm=1.0).item()
+            actor_grad_norms.append(actor_grad_norm_i)
             self.actor_optimizers[i].step()
             actor_loss_total += loss_i.detach()
 
@@ -139,7 +148,12 @@ class DiscreteMADDPG(BaseMARLAlgorithm):
         if step % self.update_tar_interval == 0:
             self._soft_update_targets()
 
-        return (actor_loss_total / self.n_agents).item(), (critic_loss_total / self.n_agents).item()
+        extra = {
+            'grad_norm_critic': critic_grad_norm,
+            'grad_norm_actor':  sum(actor_grad_norms) / len(actor_grad_norms),
+            'entropy':          entropies,  # [explorer, postman, surveyor]
+        }
+        return (actor_loss_total / self.n_agents).item(), (critic_loss_total / self.n_agents).item(), extra
 
     def _soft_update_targets(self):
         def _soft(target_list, source_list):

@@ -55,17 +55,18 @@ class Args:
     DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     # 可用算法列表：
-    # 'legacy_maddpg' — 共享参数的单网络 MADDPG，全局 Critic 拼接所有智能体观测/动作，适合同构基线对比
+    # 'legacy_maddpg' — 离散版 MADDPG。标准的 CTDE 架构（独立 Actor + 中心化 Critic），引入 Gumbel-Softmax 解决离散环境不可导问题，对 Safe MARL 的动态掩码突变具有天然鲁棒性。
+    # 'ra_maddpg'     — [本文提出算法/Ours] 角色感知 MADDPG。在离散 MADDPG 基础上引入 FiLM 角色特征调制层 (Role-Aware Critic) 与掩码感知重参数化。完美解决异构平台信度分配难题，综合适应度最高。
     # 'vdn'           — 异构 VDN，每个智能体独立 Actor+LocalCritic，Q_tot=ΣQ_i，当前主实验算法
     # 'qmix'          — 异构 QMIX，独立Actor+局部Critic+单调混合网络，非线性融合局部Q值，复杂协作任务精度优于VDN
     # 'iql'           — 完全独立 Q-Learning，无协作机制，无协作基线
-    algo_name = 'qmix'
+    algo_name = 'ra_maddpg'
 
     train_params = edict({
         # params for multipross
         #1e7 → 2e5
         #'learner_step' : int(1e5),
-        'learner_step' : int(36000),#150epoch
+        'learner_step' : int(48000),#150epoch->200epoch
         'update_tar_interval' : 40,
         'evalue_interval' : 240,
         'evalue_time' : 5,  # evaluation num per epoch
@@ -99,7 +100,7 @@ class Args:
     })
 
     train_params.update(env_params)
-    train_params['decay_steps'] = int(train_params.learner_step * 0.6) #衰减跨度：70%learning_step
+    train_params['decay_steps'] = int(train_params.learner_step * 0.7) #衰减跨度：70%learning_step
 
     # 异构体角色特征向量 E_i：task_rate 决定任务量上限，viewrange 决定迷雾清除半径
     # 顺序对应 agent 0（explorer）、1（postman）、2（surveyor）

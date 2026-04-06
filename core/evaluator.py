@@ -32,6 +32,11 @@ class Evaluator:
         sum_collision = 0.0
         sum_distance_success = 0.0
         sum_coverage = 0.0
+        sum_global_reward       = 0.0
+        sum_explorer_ir         = 0.0
+        sum_postman_ir          = 0.0
+        sum_surveyor_ir         = 0.0
+        sum_constraint_penalty  = 0.0
 
         for _ in range(n_episodes):
             obs = self.env.reset()
@@ -41,6 +46,11 @@ class Evaluator:
             ep_distance = 0.0
             ep_steps = 0
             ep_success = False
+            ep_global_reward      = 0.0
+            ep_explorer_ir        = 0.0
+            ep_postman_ir         = 0.0
+            ep_surveyor_ir        = 0.0
+            ep_constraint_penalty = 0.0
 
             for t in range(self.max_timesteps):
                 actions = self.algo.act(obs, explore=False)
@@ -56,6 +66,11 @@ class Evaluator:
                 ep_collision += info0.get('collisions', 0)
                 ep_distance += info0.get('distance_delta', 0.0)
                 ep_steps += 1
+                ep_global_reward      += info0.get('global_reward',              0.0)
+                ep_explorer_ir        += info0.get('explorer_individual_reward', 0.0)
+                ep_postman_ir         += info0.get('postman_individual_reward',  0.0)
+                ep_surveyor_ir        += info0.get('surveyor_individual_reward', 0.0)
+                ep_constraint_penalty += info0.get('constraint_penalty',         0.0)
 
                 ep_coverage = info0.get('coverage_rate', 0.0)
                 if dones[0]:
@@ -66,6 +81,11 @@ class Evaluator:
             sum_energy += ep_energy
             sum_collision += ep_collision
             sum_coverage += ep_coverage
+            sum_global_reward      += ep_global_reward
+            sum_explorer_ir        += ep_explorer_ir
+            sum_postman_ir         += ep_postman_ir
+            sum_surveyor_ir        += ep_surveyor_ir
+            sum_constraint_penalty += ep_constraint_penalty
 
             if ep_success:
                 n_success += 1
@@ -86,14 +106,19 @@ class Evaluator:
                    - w5 * E_collision - w6 * E_distance)
 
         return {
-            'success_rate': E_success,
-            'mean_reward': E_reward,
-            'mean_coverage': E_coverage,
-            'mean_time': E_time,
-            'mean_energy': E_energy,
-            'mean_collision': E_collision,
-            'mean_distance': E_distance,
-            'fitness': fitness,
+            'success_rate':               E_success,
+            'mean_reward':                E_reward,
+            'mean_coverage':              E_coverage,
+            'mean_time':                  E_time,
+            'mean_energy':                E_energy,
+            'mean_collision':             E_collision,
+            'mean_distance':              E_distance,
+            'fitness':                    fitness,
+            'global_reward':              sum_global_reward      / n_episodes,
+            'explorer_individual_reward': sum_explorer_ir        / n_episodes,
+            'postman_individual_reward':  sum_postman_ir         / n_episodes,
+            'surveyor_individual_reward': sum_surveyor_ir        / n_episodes,
+            'constraint_penalty':         sum_constraint_penalty / n_episodes,
         }
 
 
@@ -121,9 +146,14 @@ def evaluate_worker(
                 a.eval()
 
             metrics = evaluator.evaluate_model(n_episodes=evalue_time)
-            metrics['step'] = evaluate_step
-            metrics['actor_loss'] = data.get('actor_loss', 0.0)
+            metrics['step']        = evaluate_step
+            metrics['actor_loss']  = data.get('actor_loss',  0.0)
             metrics['critic_loss'] = data.get('critic_loss', 0.0)
+            metrics['grad_norm_critic']        = data.get('grad_norm_critic',        0.0)
+            metrics['grad_norm_actor']         = data.get('grad_norm_actor',         0.0)
+            metrics['policy_entropy_explorer'] = data.get('policy_entropy_explorer', 0.0)
+            metrics['policy_entropy_postman']  = data.get('policy_entropy_postman',  0.0)
+            metrics['policy_entropy_surveyor'] = data.get('policy_entropy_surveyor', 0.0)
 
             logger.info(
                 f"epoch={evaluate_step // Args.train_params.evalue_interval} | eval step={evaluate_step} | "
@@ -135,6 +165,18 @@ def evaluate_worker(
                 f"collision={metrics['mean_collision']:.2f} | "
                 f"distance={metrics['mean_distance']:.2f} | "
                 f"fitness={metrics['fitness']:.3f}"
+            )
+            logger.info(
+                f"  global_r={metrics['global_reward']:.2f} | "
+                f"explorer_ir={metrics['explorer_individual_reward']:.2f} | "
+                f"postman_ir={metrics['postman_individual_reward']:.2f} | "
+                f"surveyor_ir={metrics['surveyor_individual_reward']:.2f} | "
+                f"penalty={metrics['constraint_penalty']:.3f} | "
+                f"grad_critic={metrics['grad_norm_critic']:.3f} | "
+                f"grad_actor={metrics['grad_norm_actor']:.3f} | "
+                f"H_exp={metrics['policy_entropy_explorer']:.3f} | "
+                f"H_post={metrics['policy_entropy_postman']:.3f} | "
+                f"H_surv={metrics['policy_entropy_surveyor']:.3f}"
             )
 
             from core.logger import log_eval_metrics

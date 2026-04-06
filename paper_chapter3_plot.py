@@ -162,3 +162,62 @@ summary_df.to_csv('expanded_summary_table.csv', index=False)
 # 在终端打印 Markdown 格式表格，方便直接复制到 Markdown/Word
 print("\n" + summary_df.to_markdown(index=False))
 print("\n✅ 分阶段扩展数据表格已保存为 expanded_summary_table.csv")
+
+
+
+##########################        梯度爆炸                   #############################
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def plot_metrics(csv_path):
+    # 读取你上传的评估数据
+    df = pd.read_csv(csv_path)
+    
+    # 提取训练步数作为 X 轴
+    steps = df['step']
+    
+    # 创建 2x2 的图表布局，设置图片尺寸
+    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+    
+    # 图 a: Actor Loss
+    axs[0, 0].plot(steps, df['actor_loss'], color='#1f77b4', linewidth=1.5)
+    axs[0, 0].set_title('(a) Actor Loss', fontsize=20)
+    axs[0, 0].set_xlabel('Steps', fontsize=12)
+    axs[0, 0].set_ylabel('Loss', fontsize=12)
+    axs[0, 0].grid(True, linestyle='--', alpha=0.6)
+    
+    # 图 b: Critic Loss
+    axs[0, 1].plot(steps, df['critic_loss'], color='#ff7f0e', linewidth=1.5)
+    axs[0, 1].set_title('(b) Critic Loss', fontsize=20)
+    axs[0, 1].set_xlabel('Steps', fontsize=12)
+    axs[0, 1].set_ylabel('Loss', fontsize=12)
+    axs[0, 1].grid(True, linestyle='--', alpha=0.6)
+    
+    # 图 c: Mean Energy (突降至0)
+    axs[1, 0].plot(steps, df['mean_energy'], color='#2ca02c', linewidth=1.5)
+    axs[1, 0].set_title('(c) Mean Energy', fontsize=20)
+    axs[1, 0].set_xlabel('Steps', fontsize=12)
+    axs[1, 0].set_ylabel('Energy', fontsize=12)
+    axs[1, 0].grid(True, linestyle='--', alpha=0.6)
+    
+    # 图 d: Mean Coverage (初期探索后横盘)
+    axs[1, 1].plot(steps, df['mean_coverage'], color='#d62728', linewidth=1.5)
+    axs[1, 1].set_title('(d) Mean Coverage', fontsize=20)
+    axs[1, 1].set_xlabel('Steps', fontsize=12)
+    axs[1, 1].set_ylabel('Coverage Rate', fontsize=12)
+    axs[1, 1].grid(True, linestyle='--', alpha=0.6)
+    
+    # 自动调整子图间距，防止文字重叠
+    plt.tight_layout()
+    
+    # 保存高斯清晰度的图片
+    plt.savefig('metrics_subplot.png', dpi=300, bbox_inches='tight')
+    print("图表已生成并保存为 'metrics_subplot.png'")
+    
+    # 如果是在Jupyter中运行或需要弹窗查看，可以取消注释下面这行
+    # plt.show()
+
+if __name__ == "__main__":
+    # 请确保 'eval_metrics.csv' 与此脚本在同一目录下
+    plot_metrics('eval_metrics_boom.csv')
