@@ -165,7 +165,7 @@ print("\n✅ 分阶段扩展数据表格已保存为 expanded_summary_table.csv"
 
 
 
-##########################        梯度爆炸                   #############################
+##########################        梯度爆炸  图3.1                 #############################
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -221,3 +221,162 @@ def plot_metrics(csv_path):
 if __name__ == "__main__":
     # 请确保 'eval_metrics.csv' 与此脚本在同一目录下
     plot_metrics('eval_metrics_boom.csv')
+
+
+
+###################   两组对比图表       #################################################
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+# 算法文件映射配置
+ENV1_NAME = "平稳无约束 (Stationary/Unconstrained)"
+ENV2_NAME = "动态硬约束 (Dynamic/Hard Constrained)"
+
+FILES_ENV1 = {
+    'MADDPG': 'maddpg_eval_metrics.csv',
+    'IQL': 'iql_eval_metrics.csv',
+    'VDN': 'vdn_eval_metrics.csv',
+    'QMIX': 'qmix_eval_metrics.csv'
+}
+
+FILES_ENV2 = {
+    'MADDPG': 'maddpg_marl_eval_metrics.csv',
+    'IQL': 'iql_marl_eval_metrics.csv',
+    'VDN': 'vdn_marl_eval_metrics.csv',
+    'QMIX': 'qmix_safemarl_eval_metrics.csv'  # 对应 QMIX 的动态安全约束基线
+}
+
+COLORS = {
+    'MADDPG': '#1f77b4', # 蓝
+    'IQL': '#ff7f0e',    # 橙
+    'VDN': '#2ca02c',    # 绿
+    'QMIX': '#d62728'    # 红
+}
+
+def calculate_metrics(df, window=10):
+    """
+    自动计算评价指标：
+    - 收敛步数：平滑后的 Reward 首次达到全局最大平滑 Reward 95% 时的 Step
+    - 最终指标：取最后 10% 数据的平均值，以表示算法最终稳定时的性能
+    """
+    # 使用滑动平均平滑曲线，减少震荡对寻找收敛点的影响
+    smoothed_reward = df['mean_reward'].rolling(window=window, min_periods=1).mean()
+    max_smoothed_reward = smoothed_reward.max()
+    
+    # 找到达到 95% 峰值的第一个 step 作为收敛步数
+    threshold = max_smoothed_reward * 0.95
+    convergence_idx = smoothed_reward[smoothed_reward >= threshold].index[0] if max_smoothed_reward > 0 else df.index[-1]
+    convergence_step = df.loc[convergence_idx, 'step']
+    
+    # 取最后 10% 的数据求均值作为最终稳定态的指标
+    tail_len = max(1, int(len(df) * 0.1))
+    tail_data = df.tail(tail_len)
+    
+    final_coverage = tail_data['mean_coverage'].mean()
+    final_reward = tail_data['mean_reward'].mean()
+    final_collision = tail_data['mean_collision'].mean()
+    
+    return int(convergence_step), final_coverage, final_reward, final_collision
+
+def generate_paper_table():
+    """生成对比基线和环境维度的数据表"""
+    records = []
+    
+    # 提取 Env1 数据
+    for algo, filename in FILES_ENV1.items():
+        if os.path.exists(filename):
+            df = pd.read_csv(filename)
+            conv_step, f_cov, f_rew, f_col = calculate_metrics(df)
+            records.append({
+                '算法名称': algo,
+                '评估环境维度': '平稳无约束',
+                '收敛步数 (Step)': conv_step,
+                '最终宏观覆盖率 (%)': f"{f_cov*100:.2f}%",
+                '最终环境奖励': f"{f_rew:.2f}",
+                '最终无效碰撞/停机率': f"{f_col:.2f}"
+            })
+            
+    # 提取 Env2 数据
+    for algo, filename in FILES_ENV2.items():
+        if os.path.exists(filename):
+            df = pd.read_csv(filename)
+            conv_step, f_cov, f_rew, f_col = calculate_metrics(df)
+            records.append({
+                '算法名称': algo,
+                '评估环境维度': '动态硬约束',
+                '收敛步数 (Step)': conv_step,
+                '最终宏观覆盖率 (%)': f"{f_cov*100:.2f}%",
+                '最终环境奖励': f"{f_rew:.2f}",
+                '最终无效碰撞/停机率': f"{f_col:.2f}"
+            })
+            
+    results_df = pd.DataFrame(records)
+    print("====================== 论文评估结果对照表 ======================")
+    print(results_df.to_markdown(index=False))
+    print("================================================================")
+    
+    # 保存为 CSV 以便贴入 Excel 或 Word
+    results_df.to_csv('paper_evaluation_table.csv', index=False, encoding='utf-8-sig')
+    print("数据表已保存至: paper_evaluation_table.csv")
+
+
+def plot_1x3_learning_curves(env_name, file_dict, output_filename, window_size=15):
+    """绘制指定环境下 1x3 排列的子图 (Coverage, Reward, Loss)"""
+    fig, axs = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(f'Learning Curves: {env_name}', fontsize=16, fontweight='bold', y=1.05)
+    
+    metrics = [
+        ('mean_coverage', '(a) Mean Coverage Rate', 'Coverage'),
+        ('mean_reward', '(b) Mean Episodic Reward', 'Reward'),
+        ('actor_loss', '(c) Actor Loss', 'Loss')
+    ]
+    
+    for algo, filename in file_dict.items():
+        if not os.path.exists(filename):
+            print(f"Warning: {filename} not found. Skipping {algo}.")
+            continue
+            
+        df = pd.read_csv(filename)
+        steps = df['step']
+        
+        for ax_idx, (col_name, title, y_label) in enumerate(metrics):
+            ax = axs[ax_idx]
+            
+            # 使用滑动平均进行曲线平滑，保留 alpha 较低的原始曲线做底色（学术画图常规操作）
+            if col_name in df.columns:
+                raw_data = df[col_name]
+                smoothed_data = raw_data.rolling(window=window_size, min_periods=1).mean()
+                
+                # 画底层浅色真实数据折线
+                ax.plot(steps, raw_data, color=COLORS[algo], alpha=0.2, linewidth=1)
+                # 画顶层深色平滑折线
+                ax.plot(steps, smoothed_data, color=COLORS[algo], label=algo, linewidth=2)
+                
+            ax.set_title(title, fontsize=14)
+            ax.set_xlabel('Environment Steps', fontsize=12)
+            ax.set_ylabel(y_label, fontsize=12)
+            ax.grid(True, linestyle='--', alpha=0.6)
+            # 限制坐标系科学计数法
+            ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+
+    # 添加统一图例
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='lower center', ncol=4, bbox_to_anchor=(0.5, -0.05), fontsize=12)
+    
+    plt.tight_layout()
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    print(f"图表已生成并保存为: {output_filename}")
+    plt.close()
+
+
+if __name__ == "__main__":
+    # 1. 生成并导出对照表
+    generate_paper_table()
+    
+    # 2. 生成平稳无约束环境的 1x3 子图
+    plot_1x3_learning_curves(ENV1_NAME, FILES_ENV1, 'curves_stationary_env.png')
+    
+    # 3. 生成动态硬约束环境的 1x3 子图
+    plot_1x3_learning_curves(ENV2_NAME, FILES_ENV2, 'curves_dynamic_env.png')
