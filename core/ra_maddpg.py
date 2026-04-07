@@ -38,10 +38,15 @@ def _role_configs_to_array(role_configs: list) -> np.ndarray:
     """
     # 使用排序键名确保特征顺序在每次运行中一致
     keys = sorted(role_configs[0].keys())   # e.g. ['task_rate', 'viewrange']
-    return np.array(
+    arr = np.array(
         [[cfg[k] for k in keys] for cfg in role_configs],
         dtype=np.float32
     )  # (n_agents, role_dim)
+    # 对每个特征维度做 min-max 归一化，消除量纲差异（task_rate~0.66 vs viewrange~3）
+    col_min = arr.min(axis=0)
+    col_max = arr.max(axis=0)
+    denom = np.where(col_max - col_min > 0, col_max - col_min, 1.0)
+    return (arr - col_min) / denom
 
 
 class RAMADDPG(BaseMARLAlgorithm):
@@ -180,7 +185,7 @@ class RAMADDPG(BaseMARLAlgorithm):
             loss_i = F.mse_loss(real_q, target_q)
             critic_loss_total = critic_loss_total + loss_i
 
-        critic_loss_total.backward()
+        (critic_loss_total / self.n_agents).backward()
         critic_grad_norm = torch.nn.utils.clip_grad_norm_(
             self.model.critics.parameters(), max_norm=1.0
         ).item()

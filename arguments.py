@@ -67,14 +67,14 @@ class Args:
         #1e7 → 2e5
         #'learner_step' : int(1e5),
         'learner_step' : int(48000),#150epoch->200epoch
-        'update_tar_interval' : 40,
+        'update_tar_interval' : 1,
         'evalue_interval' : 240,
         'evalue_time' : 5,  # evaluation num per epoch
         'store_interval': 2,
         'actor_num' : actor_num,
         'date' : date,
         'checkpoint' : None,
-        'polyak' : 0.95,  # 软更新率 指代每次保留 95% 的旧权重
+        'polyak' : 0.995,  # 软更新率 每步执行，保留 99.5% 的旧权重
         'initial_eps' : 1.0,
         'final_eps'   : 0.15,
         'theta' : 0.1, # GAIL reward weight

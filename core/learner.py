@@ -54,7 +54,7 @@ def learn(model_path, data_queue, evalue_queue, actor_queues):
             if i < n_agents:
                 Entropy[i] += v
 
-        if step % train_params.update_tar_interval == 0:
+        if step % train_params.evalue_interval == 0:
             logger.info(f'epoch: {step // evalue_interval}, cur step: {step}')
 
         if step % evalue_interval == 0:
