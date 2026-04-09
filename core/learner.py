@@ -1,3 +1,4 @@
+import os
 import time
 from arguments import Args
 from core.buffer import ReplayBuffer as replay_buffer
@@ -84,6 +85,7 @@ def learn(model_path, data_queue, evalue_queue, actor_queues):
             }
             evalue_queue.put(evalue_params)
 
+            os.makedirs(model_path, exist_ok=True)
             algo.save(model_path + '/' + str(train_params.seed) + '_' + str(savetime) + '_model.pt')
             savetime += 1
             Actor_loss, Critic_loss = 0, 0

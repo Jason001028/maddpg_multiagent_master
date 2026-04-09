@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.resolve().as_posix())
 
+import os
 import time
 from core.registry import get_algorithm
 from Env.env import Gridworld
@@ -136,6 +137,7 @@ def evaluate_worker(
     algo = get_algorithm(Args.algo_name, Args, env_params, device='cpu')
 
     evaluator = Evaluator(env, algo, max_timesteps=env_params.max_timesteps)
+    best_fitness = -float('inf')
 
     while True:
         if not evalue_queue.empty():
@@ -178,6 +180,11 @@ def evaluate_worker(
                 f"H_post={metrics['policy_entropy_postman']:.3f} | "
                 f"H_surv={metrics['policy_entropy_surveyor']:.3f}"
             )
+
+            if metrics['fitness'] > best_fitness:
+                best_fitness = metrics['fitness']
+                algo.save(os.path.join(Args.train_params.save_dir, f"{Args.algo_name}_best.pt"))
+                logger.info(f"  [Best Checkpoint] step={evaluate_step} fitness={best_fitness:.4f}")
 
             from core.logger import log_eval_metrics
             log_eval_metrics(plot_path, metrics)

@@ -76,7 +76,7 @@ class Args:
         'checkpoint' : None,
         'polyak' : 0.995,  # 软更新率 每步执行，保留 99.5% 的旧权重
         'initial_eps' : 1.0,
-        'final_eps'   : 0.15,
+        'final_eps'   : 0.01,
         'theta' : 0.1, # GAIL reward weight
         'Is_train_discrim': True,
         'roll_time' : 4,
@@ -100,7 +100,7 @@ class Args:
     })
 
     train_params.update(env_params)
-    train_params['decay_steps'] = int(train_params.learner_step * 0.7) #衰减跨度：70%learning_step
+    train_params['decay_steps'] = int(train_params.learner_step * 0.85) #衰减跨度：70%->85%learning_step
 
     # 异构体角色特征向量 E_i：task_rate 决定任务量上限，viewrange 决定迷雾清除半径
     # 顺序对应 agent 0（explorer）、1（postman）、2（surveyor）

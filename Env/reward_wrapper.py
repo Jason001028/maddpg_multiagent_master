@@ -48,8 +48,9 @@ class MARLRewardWrapper(gym.Wrapper):
             coverage = env.total_clear / env.smog_initial_count
             for threshold, bonus in ((0.20, 20.0), (0.30, 40.0), (0.40, 40.0),
                                      (0.50, 50.0), (0.60, 50.0), (0.70, 60.0),
-                                     (0.75, 100.0), (0.80, 100.0), (0.90, 200.0),
-                                     (0.95, 400.0),(1.00, 4000.0)):
+                                     (0.75, 100.0), (0.80, 200.0), (0.83, 50.0),
+                                     (0.85, 50.0), (0.87, 50.0), (0.89, 50.0),
+                                     (0.90, 400.0),(0.93, 500.0),(0.95, 500.0)):
                 if coverage >= threshold and threshold not in env.milestone_triggered:
                     env.milestone_triggered.add(threshold)
                     global_r += bonus

@@ -420,3 +420,87 @@ class RAMADDPGNet(nn.Module):
         """从 Worker 拉取最新 Actor 权重（IPC 同步用）"""
         for a, src in zip(self.actors, model.actors):
             a.load_state_dict(src.state_dict())
+
+
+# ── EF-MADDPG（Early Fusion 消融）所需网络组件 ────────────────────────────────
+
+class EFActorNetwork(nn.Module):
+    """Early Fusion Actor：直接 concat(obs_i, role_i) 作为输入。
+
+    shape 变化：
+        obs_i   : (B, dim_obs)              e.g. (B, 36)
+        role_i  : (B, role_dim)             e.g. (B, 2)
+        concat  : (B, dim_obs + role_dim)   e.g. (B, 38)  ← 输入层扩展
+        output  : (B, dim_act)              e.g. (B, 5)
+    """
+    def __init__(self, dim_obs: int, dim_act: int, role_dim: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim_obs + role_dim, 256), nn.ReLU(),  # (B,38)→(B,256)
+            nn.Linear(256, 256),                nn.ReLU(),
+            nn.Linear(256, dim_act)
+        )
+
+    def forward(self, obs_i: th.Tensor, role_i: th.Tensor) -> th.Tensor:
+        # obs_i: (B, dim_obs), role_i: (B, role_dim) → (B, dim_obs+role_dim)
+        return self.net(th.cat([obs_i, role_i], dim=-1))
+
+
+class EFCentralizedCritic(nn.Module):
+    """Early Fusion 中心化 Critic：直接 concat(global_obs, all_acts, all_roles) 作为输入。
+
+    shape 变化：
+        global_obs : (B, dim_obs * n_agents)              e.g. (B, 108)
+        all_acts   : (B, dim_act * n_agents)              e.g. (B, 15)
+        all_roles  : (B, role_dim * n_agents)             e.g. (B, 6)
+        concat     : (B, (dim_obs+dim_act+role_dim)*n_agents)  e.g. (B, 129)  ← 输入层扩展
+        output     : (B, 1)
+    """
+    def __init__(self, dim_obs: int, dim_act: int, n_agents: int, role_dim: int):
+        super().__init__()
+        input_dim = (dim_obs + dim_act + role_dim) * n_agents  # e.g. (36+5+2)*3=129
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 256), nn.ReLU(),
+            nn.Linear(256, 256),       nn.ReLU(),
+            nn.Linear(256, 1)
+        )
+
+    def forward(self, global_obs: th.Tensor, all_acts: th.Tensor,
+                all_roles: th.Tensor) -> th.Tensor:
+        # global_obs:(B,108), all_acts:(B,15), all_roles:(B,6) → (B,129)
+        return self.net(th.cat([global_obs, all_acts, all_roles], dim=-1))
+
+
+class EFMADDPGNet(nn.Module):
+    """Early Fusion MADDPG 网络容器（消融实验用）。
+
+    与 RAMADDPGNet 的唯一差异：
+        - Actor 输入 = concat(obs_i, role_i)，无 FiLM
+        - Critic 输入 = concat(global_obs, all_acts, all_roles)，无 FiLM
+        - role_feats 同样注册为 buffer，保证设备一致性
+    """
+    def __init__(self, env_params, role_feats_np: np.ndarray, device: str = 'cpu'):
+        super().__init__()
+        self.n_agents = env_params.n_agents
+        dim_obs  = env_params.dim_observation
+        dim_act  = env_params.dim_action
+        role_dim = role_feats_np.shape[1]
+
+        self.register_buffer('role_feats', th.tensor(role_feats_np, dtype=th.float32))
+
+        self.actors = nn.ModuleList([
+            EFActorNetwork(dim_obs, dim_act, role_dim) for _ in range(self.n_agents)
+        ])
+        self.critics = nn.ModuleList([
+            EFCentralizedCritic(dim_obs, dim_act, self.n_agents, role_dim)
+            for _ in range(self.n_agents)
+        ])
+
+        self.actors_target  = deepcopy(self.actors)
+        self.critics_target = deepcopy(self.critics)
+
+        self.to(device)
+
+    def update(self, model):
+        for a, src in zip(self.actors, model.actors):
+            a.load_state_dict(src.state_dict())

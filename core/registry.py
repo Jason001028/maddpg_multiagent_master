@@ -3,6 +3,7 @@ from core.vdn import ContinuousVDN
 from core.qmix import ContinuousQMIX
 from core.iql import IQL
 from core.ra_maddpg import RAMADDPG
+from core.ef_maddpg import EFMADDPG
 
 _REGISTRY = {
     'legacy_maddpg': LegacyMADDPG,
@@ -10,6 +11,7 @@ _REGISTRY = {
     'qmix': ContinuousQMIX,
     'iql': IQL,
     'ra_maddpg': RAMADDPG,
+    'ef_maddpg': EFMADDPG,
 }
 
 
